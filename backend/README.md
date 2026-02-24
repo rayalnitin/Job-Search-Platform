@@ -1,98 +1,200 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# Job Portal Backend
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+A secure job search and professional networking platform backend built with Nest.js, PostgreSQL, and TypeScript.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+## Technology Stack
 
-## Description
+- **Runtime**: Node.js v20.x
+- **Framework**: Nest.js (TypeScript)
+- **Database**: PostgreSQL
+- **ORM**: TypeORM
+- **Authentication**: JWT + Argon2
+- **Encryption**: AES-256-CBC (for resumes)
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+## Prerequisites
 
-## Project setup
+Make sure you have the following installed:
+
+- Node.js v18 or v20
+- PostgreSQL
+- npm
+
+## Getting Started
+
+### Step 1 — Clone the repository
 
 ```bash
-$ npm install
+git clone <your-repo-url>
+cd jobportal/backend
 ```
 
-## Compile and run the project
+### Step 2 — Install dependencies
 
 ```bash
-# development
-$ npm run start
-
-# watch mode
-$ npm run start:dev
-
-# production mode
-$ npm run start:prod
+npm install
 ```
 
-## Run tests
+### Step 3 — Setup PostgreSQL
+
+Connect to PostgreSQL:
 
 ```bash
-# unit tests
-$ npm run test
-
-# e2e tests
-$ npm run test:e2e
-
-# test coverage
-$ npm run test:cov
+psql postgres
 ```
 
-## Deployment
+Run these commands inside psql:
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
+```sql
+CREATE DATABASE jobportal;
+CREATE USER devuser WITH ENCRYPTED PASSWORD 'devpass123';
+GRANT ALL PRIVILEGES ON DATABASE jobportal TO devuser;
+GRANT ALL ON SCHEMA public TO devuser;
+ALTER DATABASE jobportal OWNER TO devuser;
+\q
+```
 
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+### Step 4 — Create environment file
+
+Create a `.env` file in the `backend` folder:
+
+```env
+# App
+NODE_ENV=development
+PORT=3000
+
+# Database
+DB_HOST=localhost
+DB_PORT=5432
+DB_USERNAME=devuser
+DB_PASSWORD=devpass123
+DB_DATABASE=jobportal
+
+# JWT
+JWT_SECRET=your_jwt_secret_here
+
+# Resume Encryption
+RESUME_ENCRYPTION_KEY=jobportal_resume_key_32byteslong!
+```
+
+> **Note**: Never commit your `.env` file to GitHub. Each team member creates their own locally.
+
+### Step 5 — Run the application
 
 ```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
+npm run start:dev
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+TypeORM will automatically create all database tables on first run.
 
-## Resources
+---
 
-Check out a few resources that may come in handy when working with NestJS:
+## API Endpoints
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+### Auth
 
-## Support
+| Method | Endpoint           | Description             | Auth Required |
+| ------ | ------------------ | ----------------------- | ------------- |
+| POST   | `/auth/register`   | Register new user       | No            |
+| POST   | `/auth/verify-otp` | Verify email with OTP   | No            |
+| POST   | `/auth/login`      | Login and get JWT token | No            |
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+### Users
 
-## Stay in touch
+| Method | Endpoint         | Description        | Auth Required |
+| ------ | ---------------- | ------------------ | ------------- |
+| GET    | `/users/profile` | Get own profile    | Yes           |
+| PATCH  | `/users/profile` | Update own profile | Yes           |
 
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+### Resume
 
-## License
+| Method | Endpoint                 | Description               | Auth Required |
+| ------ | ------------------------ | ------------------------- | ------------- |
+| POST   | `/resume/upload`         | Upload PDF or DOCX resume | Yes           |
+| GET    | `/resume`                | List all your resumes     | Yes           |
+| GET    | `/resume/download/:id`   | Download a resume         | Yes           |
+| DELETE | `/resume/:id`            | Delete a resume           | Yes           |
+| PATCH  | `/resume/set-active/:id` | Set a resume as active    | Yes           |
 
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+### Admin (Admin role required)
+
+| Method | Endpoint                     | Description           | Auth Required |
+| ------ | ---------------------------- | --------------------- | ------------- |
+| GET    | `/admin/users`               | List all users        | Yes (Admin)   |
+| GET    | `/admin/users/:id`           | Get user with profile | Yes (Admin)   |
+| PATCH  | `/admin/users/:id/suspend`   | Suspend a user        | Yes (Admin)   |
+| PATCH  | `/admin/users/:id/unsuspend` | Unsuspend a user      | Yes (Admin)   |
+| DELETE | `/admin/users/:id`           | Delete a user         | Yes (Admin)   |
+
+---
+
+## Using the API
+
+### Authentication
+
+All protected endpoints require a Bearer token in the Authorization header:
+
+```
+Authorization: Bearer <your_jwt_token>
+```
+
+### Making an Admin User
+
+After registering, manually update the role in the database:
+
+```bash
+psql -h localhost -U devuser -d jobportal -W
+```
+
+```sql
+UPDATE users SET role = 'admin' WHERE email = 'your@email.com';
+```
+
+### OTP Simulation
+
+OTPs are currently simulated — they are printed in the terminal instead of being sent via email or SMS. Check the terminal output after registering to get your OTP.
+
+---
+
+## Project Structure
+
+```
+src/
+├── auth/           # Registration, login, JWT strategy
+├── users/          # User profiles
+├── otp/            # OTP generation and verification
+├── resume/         # Resume upload, encryption, download
+├── admin/          # Admin dashboard
+└── common/         # Shared guards, decorators, utilities
+```
+
+---
+
+## Security Features
+
+- Passwords hashed with Argon2
+- JWT based authentication
+- Role based access control (user / recruiter / admin)
+- Resumes encrypted at rest with AES-256-CBC
+- OTP based email verification
+- Suspended account check on login
+
+---
+
+## Troubleshooting
+
+**Permission denied for schema public**
+
+```sql
+GRANT ALL ON SCHEMA public TO devuser;
+ALTER DATABASE jobportal OWNER TO devuser;
+```
+
+**Port 3000 already in use**
+
+```bash
+sudo lsof -i :3000
+sudo kill -9 <PID>
+```
+
+**Tables not created**
+Make sure `synchronize: true` is set in `app.module.ts` and restart the server.
