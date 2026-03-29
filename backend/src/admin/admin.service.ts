@@ -7,6 +7,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { User } from '../users/user.entity';
 import { Profile } from '../users/profile.entity';
+import { AuditService } from '../audit/audit.service'; // ✅ added
 
 @Injectable()
 export class AdminService {
@@ -15,6 +16,7 @@ export class AdminService {
     private userRepository: Repository<User>,
     @InjectRepository(Profile)
     private profileRepository: Repository<Profile>,
+    private auditService: AuditService, // ✅ added
   ) {}
 
   async getAllUsers() {
@@ -94,5 +96,9 @@ export class AdminService {
     await this.userRepository.remove(user);
 
     return { message: 'User deleted successfully' };
+  }
+
+  async getAuditLogs() {
+    return this.auditService.getAllLogs();
   }
 }

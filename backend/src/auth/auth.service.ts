@@ -42,7 +42,7 @@ export class AuthService {
       email: dto.email,
       password: hashedPassword,
       phone: dto.phone,
-      role: UserRole.USER,
+      role: dto.role ?? UserRole.USER,
       isVerified: false,
     });
     await this.userRepository.save(user);
