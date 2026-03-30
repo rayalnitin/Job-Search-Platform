@@ -42,4 +42,8 @@ export class AdminController {
   deleteUser(@Param('id') id: string) {
     return this.adminService.deleteUser(id);
   }
+  @Get('logs')
+  getAuditLogs() {
+    return this.adminService.getAuditLogs();
+  }
 }
