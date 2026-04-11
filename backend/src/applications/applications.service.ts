@@ -97,7 +97,7 @@ export class ApplicationsService {
   async getMyApplications(user: User) {
     const applications = await this.applicationRepository.find({
       where: { applicant: { id: user.id } },
-      relations: ['job', 'job.company', 'resume'],
+      relations: ['job', 'job.company', 'job.postedBy', 'resume'],
       order: { appliedAt: 'DESC' },
     });
 
@@ -108,6 +108,12 @@ export class ApplicationsService {
         title: app.job.title,
         company: app.job.company?.name,
       },
+      recruiter: app.job.postedBy
+        ? {
+            id: app.job.postedBy.id,
+            email: app.job.postedBy.email,
+          }
+        : null,
       status: app.status,
       statusHistory: app.statusHistory,
       coverNote: app.coverNote,
