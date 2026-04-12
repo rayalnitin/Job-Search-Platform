@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { APP_GUARD } from '@nestjs/core';
 import { UsersModule } from './users/users.module';
 import { AuthModule } from './auth/auth.module';
 import { OtpModule } from './otp/otp.module';
@@ -10,6 +12,7 @@ import { CompaniesModule } from './companies/companies.module';
 import { AuditModule } from './audit/audit.module';
 import { ApplicationsModule } from './applications/applications.module';
 import { MessagesModule } from './messages/messages.module';
+import { PkiModule } from './pki/pki.module';
 import { User } from './users/user.entity';
 import { Profile } from './users/profile.entity';
 import { Otp } from './otp/otp.entity';
@@ -23,6 +26,23 @@ import { Message } from './messages/message.entity';
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+
+    // ── Rate Limiting ───────────────────────────────────────────
+    // Global: 100 requests per minute per IP across all routes.
+    // Auth endpoints get stricter limit via @Throttle decorator.
+    ThrottlerModule.forRoot([
+      {
+        name: 'global',
+        ttl: 60000, // 1 minute window in ms
+        limit: 100, // max 100 requests per window
+      },
+      {
+        name: 'auth',
+        ttl: 60000, // 1 minute window
+        limit: 10, // max 10 requests per window (for auth routes)
+      },
+    ]),
+
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
       useFactory: (configService: ConfigService) => ({
@@ -48,6 +68,8 @@ import { Message } from './messages/message.entity';
       }),
       inject: [ConfigService],
     }),
+
+    PkiModule,
     UsersModule,
     AuthModule,
     OtpModule,
@@ -57,6 +79,13 @@ import { Message } from './messages/message.entity';
     AuditModule,
     ApplicationsModule,
     MessagesModule,
+  ],
+  providers: [
+    // Apply ThrottlerGuard globally to all routes
+    {
+      provide: APP_GUARD,
+      useClass: ThrottlerGuard,
+    },
   ],
 })
 export class AppModule {}

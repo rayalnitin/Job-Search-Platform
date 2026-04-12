@@ -24,6 +24,11 @@ export enum AuditAction {
   USER_SUSPENDED = 'USER_SUSPENDED',
   USER_UNSUSPENDED = 'USER_UNSUSPENDED',
   USER_DELETED = 'USER_DELETED',
+  // Password & Account
+  PASSWORD_RESET = 'PASSWORD_RESET',
+  ACCOUNT_DELETED = 'ACCOUNT_DELETED',
+  // Resume
+  RESUME_DOWNLOADED = 'RESUME_DOWNLOADED',
 }
 
 @Entity('audit_logs')
@@ -45,6 +50,15 @@ export class AuditLog {
 
   @Column({ type: 'jsonb', nullable: true })
   metadata: Record<string, any>;
+
+  // Hash chaining fields
+  // SHA-256 of the previous entry's entryHash (null/'GENESIS' for first entry)
+  @Column({ nullable: true, type: 'text' })
+  previousHash: string;
+
+  // SHA-256(action + performedBy + targetId + targetType + metadata + createdAt + previousHash)
+  @Column({ nullable: true, type: 'text' })
+  entryHash: string;
 
   @CreateDateColumn()
   createdAt: Date;

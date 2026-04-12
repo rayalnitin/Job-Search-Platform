@@ -11,6 +11,12 @@ import { User } from '../users/user.entity';
 import { SendMessageDto } from './dto/message.dto';
 import { AuditService } from '../audit/audit.service';
 import { AuditAction } from '../audit/audit-log.entity';
+import { PkiService } from '../pki/pki.service';
+import {
+  signData,
+  verifySignature,
+  hashString,
+} from '../common/utils/pki.util';
 
 const ALGORITHM = 'aes-256-cbc';
 const IV_LENGTH = 16;
@@ -56,9 +62,10 @@ export class MessagesService {
     @InjectRepository(User)
     private userRepository: Repository<User>,
     private auditService: AuditService,
+    private pkiService: PkiService,
   ) {}
 
-  // ── Send a message ───────────────────────────────────────────
+  // ── Send a message ────────────────────────────────────────────
 
   async sendMessage(sender: User, dto: SendMessageDto) {
     const receiver = await this.userRepository.findOne({
@@ -70,13 +77,24 @@ export class MessagesService {
       throw new ForbiddenException('You cannot message yourself');
     }
 
+    // Encrypt the message content for storage
     const { encryptedContent, iv } = encryptMessage(dto.content);
+
+    // PKI Step 1: hash the plaintext content
+    const contentHash = hashString(dto.content);
+
+    // PKI Step 2: sign the hash with the server's RSA private key
+    // This proves the message was accepted and stored by this server
+    // and that the stored ciphertext has not been tampered with
+    const signature = signData(contentHash, this.pkiService.getPrivateKey());
 
     const message = this.messageRepository.create({
       sender,
       receiver,
       encryptedContent,
       iv,
+      contentHash,
+      signature,
       isRead: false,
     });
 
@@ -96,11 +114,13 @@ export class MessagesService {
         id: message.id,
         receiverId: receiver.id,
         sentAt: message.createdAt,
+        contentHash,
+        signatureAttached: true,
       },
     };
   }
 
-  // ── Get full conversation with a user ────────────────────────
+  // ── Get full conversation with a user ─────────────────────────
 
   async getConversation(currentUser: User, otherUserId: string) {
     const otherUser = await this.userRepository.findOne({
@@ -133,21 +153,52 @@ export class MessagesService {
         .execute();
     }
 
-    // Decrypt and return
-    return messages.map((m) => ({
-      id: m.id,
-      from: m.sender.id === currentUser.id ? 'me' : m.sender.email,
-      senderId: m.sender.id,
-      content: decryptMessage(m.encryptedContent, m.iv),
-      isRead: m.isRead,
-      sentAt: m.createdAt,
-    }));
+    // Decrypt, verify signature, and return
+    return messages.map((m) => {
+      const decryptedContent = decryptMessage(m.encryptedContent, m.iv);
+
+      // PKI: verify the signature on the decrypted content
+      let integrityVerified = false;
+      let integrityNote = 'No PKI signature on record for this message.';
+
+      if (m.signature && m.contentHash) {
+        // Recompute hash of decrypted content and compare
+        const recomputedHash = hashString(decryptedContent);
+        const hashMatches = recomputedHash === m.contentHash;
+
+        if (!hashMatches) {
+          integrityNote =
+            'WARNING: Content hash mismatch. Message may have been tampered with in the database.';
+        } else {
+          integrityVerified = verifySignature(
+            m.contentHash,
+            m.signature,
+            this.pkiService.getPublicKey(),
+          );
+          integrityNote = integrityVerified
+            ? 'RSA-SHA256 signature verified. Message integrity confirmed.'
+            : 'WARNING: RSA signature verification failed. Message may have been tampered with.';
+        }
+      }
+
+      return {
+        id: m.id,
+        from: m.sender.id === currentUser.id ? 'me' : m.sender.email,
+        senderId: m.sender.id,
+        content: decryptedContent,
+        isRead: m.isRead,
+        sentAt: m.createdAt,
+        integrity: {
+          verified: integrityVerified,
+          note: integrityNote,
+        },
+      };
+    });
   }
 
-  // ── List all conversations (inbox preview) ───────────────────
+  // ── List all conversations (inbox preview) ────────────────────
 
   async getInbox(currentUser: User) {
-    // Get the latest message per unique conversation partner
     const messages = await this.messageRepository
       .createQueryBuilder('message')
       .leftJoinAndSelect('message.sender', 'sender')
@@ -158,7 +209,6 @@ export class MessagesService {
       .orderBy('message.createdAt', 'DESC')
       .getMany();
 
-    // Deduplicate by conversation partner
     const seen = new Set<string>();
     const inbox: {
       partnerId: string;

@@ -3,7 +3,6 @@ import {
   PrimaryGeneratedColumn,
   Column,
   CreateDateColumn,
-  UpdateDateColumn,
   ManyToOne,
   JoinColumn,
 } from 'typeorm';
@@ -27,9 +26,16 @@ export class Resume {
   @Column({ default: false })
   isActive: boolean;
 
+  // PKI: SHA-256 hash of the original (pre-encryption) file buffer
+  // Stored so we can re-verify integrity on download without re-decrypting first
+  @Column({ nullable: true, type: 'text' })
+  fileHash: string;
+
+  // PKI: RSA-SHA256 signature of fileHash, signed with server private key
+  // Stored as base64 string
+  @Column({ nullable: true, type: 'text' })
+  signature: string;
+
   @CreateDateColumn()
   createdAt: Date;
-
-  @UpdateDateColumn()
-  updatedAt: Date;
 }

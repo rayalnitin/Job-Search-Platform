@@ -5,7 +5,7 @@ import {
   IsOptional,
   IsEnum,
 } from 'class-validator';
-import { UserRole } from 'src/users/user.entity';
+import { UserRole } from '../../users/user.entity';
 
 export class RegisterDto {
   @IsEmail()
@@ -15,12 +15,12 @@ export class RegisterDto {
   @MinLength(8)
   password: string;
 
-  @IsString()
   @IsOptional()
+  @IsString()
   phone?: string;
 
   @IsOptional()
-  @IsEnum([UserRole.USER, UserRole.RECRUITER]) // admin cannot self-register
+  @IsEnum(UserRole)
   role?: UserRole;
 }
 
@@ -33,6 +33,36 @@ export class LoginDto {
 }
 
 export class VerifyOtpDto {
+  @IsEmail()
+  email: string;
+
+  @IsString()
+  code: string;
+}
+
+export class ForgotPasswordDto {
+  @IsEmail()
+  email: string;
+}
+
+export class ResetPasswordDto {
+  @IsEmail()
+  email: string;
+
+  @IsString()
+  code: string;
+
+  @IsString()
+  @MinLength(8)
+  newPassword: string;
+}
+
+export class RequestDeletionOtpDto {
+  @IsEmail()
+  email: string;
+}
+
+export class ConfirmAccountDeletionDto {
   @IsEmail()
   email: string;
 

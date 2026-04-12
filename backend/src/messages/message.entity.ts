@@ -25,9 +25,18 @@ export class Message {
   @Column({ type: 'text' })
   encryptedContent: string;
 
-  // IV stored separately as hex string (prepended approach like crypto.util)
+  // IV stored separately as hex string
   @Column({ type: 'text' })
   iv: string;
+
+  // PKI: SHA-256 hash of the original plaintext content
+  @Column({ nullable: true, type: 'text' })
+  contentHash: string;
+
+  // PKI: RSA-SHA256 signature of contentHash, signed with server private key
+  // Proves the message was created by this server and not altered in the DB
+  @Column({ nullable: true, type: 'text' })
+  signature: string;
 
   @Column({ default: false })
   isRead: boolean;
