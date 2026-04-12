@@ -1,4 +1,5 @@
-import { IsString, IsOptional } from 'class-validator';
+import { IsString, IsOptional, IsEnum, IsBoolean } from 'class-validator';
+import { FieldPrivacy } from '../profile.entity';
 
 export class UpdateProfileDto {
   @IsString()
@@ -28,4 +29,36 @@ export class UpdateProfileDto {
   @IsString()
   @IsOptional()
   skills?: string;
+
+  // ── Privacy controls ──────────────────────────────────────────
+
+  @IsEnum(FieldPrivacy)
+  @IsOptional()
+  headlinePrivacy?: FieldPrivacy;
+
+  @IsEnum(FieldPrivacy)
+  @IsOptional()
+  locationPrivacy?: FieldPrivacy;
+
+  @IsEnum(FieldPrivacy)
+  @IsOptional()
+  bioPrivacy?: FieldPrivacy;
+
+  @IsEnum(FieldPrivacy)
+  @IsOptional()
+  educationPrivacy?: FieldPrivacy;
+
+  @IsEnum(FieldPrivacy)
+  @IsOptional()
+  experiencePrivacy?: FieldPrivacy;
+
+  @IsEnum(FieldPrivacy)
+  @IsOptional()
+  skillsPrivacy?: FieldPrivacy;
+
+  // ── Viewer opt-out ────────────────────────────────────────────
+
+  @IsBoolean()
+  @IsOptional()
+  optOutOfViewers?: boolean;
 }

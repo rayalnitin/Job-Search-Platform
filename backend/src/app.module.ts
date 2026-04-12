@@ -13,8 +13,10 @@ import { AuditModule } from './audit/audit.module';
 import { ApplicationsModule } from './applications/applications.module';
 import { MessagesModule } from './messages/messages.module';
 import { PkiModule } from './pki/pki.module';
+import { ConnectionsModule } from './connections/connections.module';
 import { User } from './users/user.entity';
 import { Profile } from './users/profile.entity';
+import { ProfileView } from './users/profile-view.entity';
 import { Otp } from './otp/otp.entity';
 import { Resume } from './resume/resume.entity';
 import { Company } from './companies/company.entity';
@@ -22,24 +24,22 @@ import { Job } from './companies/job.entity';
 import { AuditLog } from './audit/audit-log.entity';
 import { Application } from './applications/application.entity';
 import { Message } from './messages/message.entity';
+import { Connection } from './connections/connection.entity';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
 
-    // ── Rate Limiting ───────────────────────────────────────────
-    // Global: 100 requests per minute per IP across all routes.
-    // Auth endpoints get stricter limit via @Throttle decorator.
     ThrottlerModule.forRoot([
       {
         name: 'global',
-        ttl: 60000, // 1 minute window in ms
-        limit: 100, // max 100 requests per window
+        ttl: 60000,
+        limit: 100,
       },
       {
         name: 'auth',
-        ttl: 60000, // 1 minute window
-        limit: 10, // max 10 requests per window (for auth routes)
+        ttl: 60000,
+        limit: 10,
       },
     ]),
 
@@ -55,6 +55,7 @@ import { Message } from './messages/message.entity';
         entities: [
           User,
           Profile,
+          ProfileView,
           Otp,
           Resume,
           Company,
@@ -62,6 +63,7 @@ import { Message } from './messages/message.entity';
           AuditLog,
           Application,
           Message,
+          Connection,
         ],
         autoLoadEntities: true,
         synchronize: true,
@@ -79,9 +81,9 @@ import { Message } from './messages/message.entity';
     AuditModule,
     ApplicationsModule,
     MessagesModule,
+    ConnectionsModule,
   ],
   providers: [
-    // Apply ThrottlerGuard globally to all routes
     {
       provide: APP_GUARD,
       useClass: ThrottlerGuard,

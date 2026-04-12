@@ -58,6 +58,10 @@ export class Application {
   @Column({ type: 'text', nullable: true })
   recruiterNotes: string;
 
+  // Shortlisting flag (set by recruiter/admin)
+  @Column({ default: false })
+  isShortlisted: boolean;
+
   @CreateDateColumn()
   appliedAt: Date;
 

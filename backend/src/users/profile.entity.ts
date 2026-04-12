@@ -9,6 +9,12 @@ import {
 } from 'typeorm';
 import { User } from './user.entity';
 
+export enum FieldPrivacy {
+  PUBLIC = 'public',
+  CONNECTIONS = 'connections',
+  PRIVATE = 'private',
+}
+
 @Entity('profiles')
 export class Profile {
   @PrimaryGeneratedColumn('uuid')
@@ -38,6 +44,57 @@ export class Profile {
 
   @Column({ nullable: true, type: 'text' })
   skills: string;
+
+  // ── Per-field privacy controls ────────────────────────────────
+
+  @Column({
+    type: 'enum',
+    enum: FieldPrivacy,
+    default: FieldPrivacy.PUBLIC,
+  })
+  headlinePrivacy: FieldPrivacy;
+
+  @Column({
+    type: 'enum',
+    enum: FieldPrivacy,
+    default: FieldPrivacy.PUBLIC,
+  })
+  locationPrivacy: FieldPrivacy;
+
+  @Column({
+    type: 'enum',
+    enum: FieldPrivacy,
+    default: FieldPrivacy.PUBLIC,
+  })
+  bioPrivacy: FieldPrivacy;
+
+  @Column({
+    type: 'enum',
+    enum: FieldPrivacy,
+    default: FieldPrivacy.PUBLIC,
+  })
+  educationPrivacy: FieldPrivacy;
+
+  @Column({
+    type: 'enum',
+    enum: FieldPrivacy,
+    default: FieldPrivacy.PUBLIC,
+  })
+  experiencePrivacy: FieldPrivacy;
+
+  @Column({
+    type: 'enum',
+    enum: FieldPrivacy,
+    default: FieldPrivacy.PUBLIC,
+  })
+  skillsPrivacy: FieldPrivacy;
+
+  // ── Profile viewer opt-out ────────────────────────────────────
+  // When true, this user's views are NOT recorded on others' profiles.
+  // Also hides this user from others' viewer lists.
+
+  @Column({ default: false })
+  optOutOfViewers: boolean;
 
   @CreateDateColumn()
   createdAt: Date;

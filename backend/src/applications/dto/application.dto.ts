@@ -1,4 +1,10 @@
-import { IsString, IsOptional, IsUUID, IsEnum } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  IsUUID,
+  IsEnum,
+  IsBoolean,
+} from 'class-validator';
 import { ApplicationStatus } from '../application.entity';
 
 export class CreateApplicationDto {
@@ -21,4 +27,9 @@ export class UpdateApplicationStatusDto {
   @IsOptional()
   @IsString()
   recruiterNotes?: string;
+}
+
+export class ToggleShortlistDto {
+  @IsBoolean()
+  isShortlisted: boolean;
 }

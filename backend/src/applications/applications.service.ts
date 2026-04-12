@@ -13,6 +13,7 @@ import { Resume } from '../resume/resume.entity';
 import {
   CreateApplicationDto,
   UpdateApplicationStatusDto,
+  ToggleShortlistDto,
 } from './dto/application.dto';
 import { AuditService } from '../audit/audit.service';
 import { AuditAction } from '../audit/audit-log.entity';
@@ -117,6 +118,7 @@ export class ApplicationsService {
       status: app.status,
       statusHistory: app.statusHistory,
       coverNote: app.coverNote,
+      isShortlisted: app.isShortlisted,
       resumeId: app.resume?.id ?? null,
       appliedAt: app.appliedAt,
     }));
@@ -155,6 +157,7 @@ export class ApplicationsService {
       recruiterNotes: isRecruiterOrAdmin
         ? application.recruiterNotes
         : undefined,
+      isShortlisted: application.isShortlisted,
       resumeId: application.resume?.id ?? null,
       appliedAt: application.appliedAt,
       updatedAt: application.updatedAt,
@@ -162,8 +165,13 @@ export class ApplicationsService {
   }
 
   // ── Get all applicants for a job (recruiter view) ────────────
+  // Optional query param: ?shortlisted=true to filter only shortlisted
 
-  async getApplicantsForJob(user: User, jobId: string) {
+  async getApplicantsForJob(
+    user: User,
+    jobId: string,
+    shortlistedOnly?: boolean,
+  ) {
     const job = await this.jobRepository.findOne({
       where: { id: jobId },
       relations: ['postedBy'],
@@ -175,8 +183,13 @@ export class ApplicationsService {
       throw new ForbiddenException('Access denied');
     }
 
+    const whereClause: any = { job: { id: jobId } };
+    if (shortlistedOnly) {
+      whereClause.isShortlisted = true;
+    }
+
     const applications = await this.applicationRepository.find({
-      where: { job: { id: jobId } },
+      where: whereClause,
       relations: ['applicant', 'resume'],
       order: { appliedAt: 'DESC' },
     });
@@ -191,6 +204,7 @@ export class ApplicationsService {
       statusHistory: app.statusHistory,
       coverNote: app.coverNote,
       recruiterNotes: app.recruiterNotes,
+      isShortlisted: app.isShortlisted,
       resumeId: app.resume?.id ?? null,
       appliedAt: app.appliedAt,
     }));
@@ -255,6 +269,42 @@ export class ApplicationsService {
         id: application.id,
         status: application.status,
         statusHistory: application.statusHistory,
+      },
+    };
+  }
+
+  // ── Toggle shortlist (recruiter/admin only) ───────────────────
+
+  async toggleShortlist(
+    user: User,
+    applicationId: string,
+    dto: ToggleShortlistDto,
+  ) {
+    const application = await this.applicationRepository.findOne({
+      where: { id: applicationId },
+      relations: ['job', 'job.postedBy', 'applicant'],
+    });
+    if (!application) throw new NotFoundException('Application not found');
+
+    // Only job poster or admin can shortlist
+    if (
+      application.job.postedBy.id !== user.id &&
+      user.role !== UserRole.ADMIN
+    ) {
+      throw new ForbiddenException('Access denied');
+    }
+
+    application.isShortlisted = dto.isShortlisted;
+    await this.applicationRepository.save(application);
+
+    return {
+      message: dto.isShortlisted
+        ? 'Applicant shortlisted successfully'
+        : 'Applicant removed from shortlist',
+      application: {
+        id: application.id,
+        applicantId: application.applicant.id,
+        isShortlisted: application.isShortlisted,
       },
     };
   }

@@ -29,6 +29,8 @@ export enum AuditAction {
   ACCOUNT_DELETED = 'ACCOUNT_DELETED',
   // Resume
   RESUME_DOWNLOADED = 'RESUME_DOWNLOADED',
+  // Profile
+  PROFILE_VIEWED = 'PROFILE_VIEWED',
 }
 
 @Entity('audit_logs')
