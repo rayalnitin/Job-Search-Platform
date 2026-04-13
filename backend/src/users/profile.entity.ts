@@ -45,6 +45,16 @@ export class Profile {
   @Column({ nullable: true, type: 'text' })
   skills: string;
 
+  // ── Profile picture ───────────────────────────────────────────
+  // Stored as raw bytes — not encrypted (avatars are public-facing)
+  // Fetch via GET /users/avatar/:userId
+
+  @Column({ type: 'bytea', nullable: true })
+  avatarData: Buffer | null;
+
+  @Column({ type: 'text', nullable: true })
+  avatarMimeType: string | null; // e.g. image/jpeg, image/png, image/webp
+
   // ── Per-field privacy controls ────────────────────────────────
 
   @Column({
@@ -90,8 +100,6 @@ export class Profile {
   skillsPrivacy: FieldPrivacy;
 
   // ── Profile viewer opt-out ────────────────────────────────────
-  // When true, this user's views are NOT recorded on others' profiles.
-  // Also hides this user from others' viewer lists.
 
   @Column({ default: false })
   optOutOfViewers: boolean;

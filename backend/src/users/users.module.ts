@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { MulterModule } from '@nestjs/platform-express';
+import { memoryStorage } from 'multer';
 import { User } from './user.entity';
 import { Profile } from './profile.entity';
 import { ProfileView } from './profile-view.entity';
@@ -12,6 +14,8 @@ import { AuditModule } from '../audit/audit.module';
   imports: [
     TypeOrmModule.forFeature([User, Profile, ProfileView, Connection]),
     AuditModule,
+    // Store uploaded files in memory buffer (same pattern as resume upload)
+    MulterModule.register({ storage: memoryStorage() }),
   ],
   providers: [UsersService],
   controllers: [UsersController],

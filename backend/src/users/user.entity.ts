@@ -37,6 +37,12 @@ export class User {
   @Column({ default: false })
   isSuspended: boolean;
 
+  // E2EE: client-generated public key uploaded after login
+  // Used by other clients to encrypt messages before sending
+  // Server never holds the private key
+  @Column({ type: 'text', nullable: true })
+  publicKey: string | null;
+
   @CreateDateColumn()
   createdAt: Date;
 

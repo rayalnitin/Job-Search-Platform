@@ -24,6 +24,9 @@ import { Job } from './companies/job.entity';
 import { AuditLog } from './audit/audit-log.entity';
 import { Application } from './applications/application.entity';
 import { Message } from './messages/message.entity';
+import { GroupConversation } from './messages/group-conversation.entity';
+import { GroupMessage } from './messages/group-message.entity';
+import { E2eeMessage } from './messages/e2ee-message.entity';
 import { Connection } from './connections/connection.entity';
 
 @Module({
@@ -31,16 +34,8 @@ import { Connection } from './connections/connection.entity';
     ConfigModule.forRoot({ isGlobal: true }),
 
     ThrottlerModule.forRoot([
-      {
-        name: 'global',
-        ttl: 60000,
-        limit: 100,
-      },
-      {
-        name: 'auth',
-        ttl: 60000,
-        limit: 10,
-      },
+      { name: 'global', ttl: 60000, limit: 100 },
+      { name: 'auth', ttl: 60000, limit: 10 },
     ]),
 
     TypeOrmModule.forRootAsync({
@@ -63,6 +58,9 @@ import { Connection } from './connections/connection.entity';
           AuditLog,
           Application,
           Message,
+          GroupConversation,
+          GroupMessage,
+          E2eeMessage,
           Connection,
         ],
         autoLoadEntities: true,
@@ -83,11 +81,6 @@ import { Connection } from './connections/connection.entity';
     MessagesModule,
     ConnectionsModule,
   ],
-  providers: [
-    {
-      provide: APP_GUARD,
-      useClass: ThrottlerGuard,
-    },
-  ],
+  providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })
 export class AppModule {}
