@@ -10,6 +10,7 @@ import {
   getUsers,
   suspendUser,
   unsuspendUser,
+  verifyAuditLogs,
 } from "../../api/admin";
 
 export default function AdminDashboard() {
@@ -23,6 +24,7 @@ export default function AdminDashboard() {
   const [loadingUserDetail, setLoadingUserDetail] = useState(false);
   const [search, setSearch] = useState("");
   const [message, setMessage] = useState("");
+  const [verification, setVerification] = useState(null);
 
   const fetchUsers = async (keepSelected = true) => {
     setLoadingUsers(true);
@@ -55,6 +57,17 @@ export default function AdminDashboard() {
       setMessage(err?.response?.data?.message || "Failed to load audit logs.");
     } finally {
       setLoadingLogs(false);
+    }
+  };
+
+  const runAuditVerification = async () => {
+    try {
+      const res = await verifyAuditLogs();
+      setVerification(res.data);
+      setMessage(res.data.message);
+    } catch (err) {
+      console.log(err);
+      setMessage(err?.response?.data?.message || "Failed to verify audit logs.");
     }
   };
 
@@ -183,18 +196,41 @@ export default function AdminDashboard() {
             <section id="overview" className="space-y-4">
               <div className="flex items-center justify-between gap-3">
                 <h2 className="text-xl font-semibold text-slate-900">Overview</h2>
-                <button
-                  type="button"
-                  onClick={() => {
-                    fetchUsers(true);
-                    fetchLogs();
-                  }}
-                  className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-                >
-                  Refresh Data
-                </button>
+                <div className="flex flex-wrap gap-3">
+                  <button
+                    type="button"
+                    onClick={runAuditVerification}
+                    className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                  >
+                    Verify Audit Chain
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      fetchUsers(true);
+                      fetchLogs();
+                    }}
+                    className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                  >
+                    Refresh Data
+                  </button>
+                </div>
               </div>
               <StatsCards stats={stats} />
+              {verification && (
+                <div
+                  className={`rounded-2xl border px-4 py-3 text-sm ${
+                    verification.valid
+                      ? "border-emerald-100 bg-emerald-50 text-emerald-700"
+                      : "border-red-100 bg-red-50 text-red-700"
+                  }`}
+                >
+                  <p className="font-semibold">
+                    {verification.valid ? "Audit chain verified" : "Audit chain issue detected"}
+                  </p>
+                  <p className="mt-1">{verification.message}</p>
+                </div>
+              )}
             </section>
 
             <section id="users" className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_380px]">

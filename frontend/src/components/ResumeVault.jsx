@@ -50,7 +50,7 @@
         onClick={() => hasResume && onDownload?.(resume.id, resume.filename)}
         className="mt-4 w-full rounded-2xl bg-blue-600 py-3 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-500"
       >
-        {hasResume ? "Download Attached Resume" : "Resume Not Available"}
+        {hasResume ? "Open Resume Vault" : "Resume Not Available"}
       </button>
     </div>
   );

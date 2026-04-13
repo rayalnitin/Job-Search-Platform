@@ -5,7 +5,7 @@ import Sidebar from "../../components/Sidebar";
 import Timeline from "../../components/Timeline";
 import ResumeVault from "../../components/ResumeVault";
 import { getMyApplications } from "../../api/application";
-import { downloadResume, getResumes } from "../../api/resume";
+import { getResumes } from "../../api/resume";
 
 const statusStyles = {
   applied: "bg-blue-50 text-blue-700",
@@ -51,23 +51,6 @@ export default function Applications() {
   const selectedResume = resumes.find(
     (resume) => resume.id === selectedApplication?.resumeId
   );
-
-  const handleResumeDownload = async (id, filename) => {
-    try {
-      const res = await downloadResume(id);
-      const url = window.URL.createObjectURL(new Blob([res.data]));
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = filename;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.URL.revokeObjectURL(url);
-    } catch (err) {
-      console.log("Download resume error:", err);
-      setMessage(err?.response?.data?.message || "Failed to download resume.");
-    }
-  };
 
   return (
     <div className="bg-gray-50 min-h-screen">
@@ -203,7 +186,7 @@ export default function Applications() {
               <ResumeVault
                 application={selectedApplication}
                 resume={selectedResume}
-                onDownload={handleResumeDownload}
+                onDownload={() => navigate("/resume")}
               />
             </div>
           </div>

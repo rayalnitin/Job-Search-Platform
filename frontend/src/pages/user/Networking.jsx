@@ -1,19 +1,151 @@
-import { useState } from "react";
+﻿import { useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import Navbar from "../../components/Navbar";
 import Sidebar from "../../components/Sidebar";
-import UserCard from "../../components/network/UserCard";
-import ConnectionsList from "../../components/network/ConnectionsList";
-import RequestsList from "../../components/network/RequestsList";
+import {
+  acceptConnectionRequest,
+  getConnectionGraph,
+  getConnections,
+  getPendingConnections,
+  rejectConnectionRequest,
+  removeConnection,
+  sendConnectionRequest,
+} from "../../api/connections";
 
-const users = [
-  { name: "Amit Sharma", role: "Software Engineer", company: "Nexus Labs" },
-  { name: "Neha Singh", role: "Product Manager", company: "BlueOrbit" },
-  { name: "Rahul Verma", role: "Data Scientist", company: "DataNest" },
-  { name: "Priya Nair", role: "Frontend Developer", company: "PixelForge" },
+const tabs = [
+  { id: "connect", label: "Connect" },
+  { id: "connections", label: "Connections" },
+  { id: "requests", label: "Requests" },
+  { id: "graph", label: "Graph" },
 ];
 
+const getFriendlyError = (err, fallback) => {
+  if (err?.response?.status === 429) {
+    return "Too many requests right now. Please wait a few seconds and try again.";
+  }
+
+  if (err?.response?.status >= 500) {
+    return "The server hit an internal error. Please retry shortly.";
+  }
+
+  return err?.response?.data?.message || fallback;
+};
+
 export default function Networking() {
-  const [tab, setTab] = useState("suggestions");
+  const navigate = useNavigate();
+  const initialLoadRef = useRef(false);
+  const tabEffectStartedRef = useRef(false);
+  const [tab, setTab] = useState("connect");
+  const [receiverId, setReceiverId] = useState("");
+  const [connections, setConnections] = useState([]);
+  const [requests, setRequests] = useState([]);
+  const [graph, setGraph] = useState({ totalConnections: 0, graph: [] });
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState("");
+
+  const loadTabData = async (targetTab, { force = false } = {}) => {
+    try {
+      setLoading(true);
+      setMessage("");
+
+      if (targetTab === "connect" || targetTab === "connections") {
+        if (!force && connections.length && targetTab !== "connect") {
+          return;
+        }
+        const res = await getConnections();
+        setConnections(res.data || []);
+        return;
+      }
+
+      if (targetTab === "requests") {
+        if (!force && requests.length) {
+          return;
+        }
+        const res = await getPendingConnections();
+        setRequests(res.data || []);
+        return;
+      }
+
+      if (!force && graph.graph?.length) {
+        return;
+      }
+      const res = await getConnectionGraph();
+      setGraph(res.data || { totalConnections: 0, graph: [] });
+    } catch (err) {
+      console.log(err);
+      setMessage(getFriendlyError(err, "Failed to load networking data."));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (initialLoadRef.current) {
+      return;
+    }
+
+    initialLoadRef.current = true;
+    loadTabData("connect", { force: true });
+  }, []);
+
+  useEffect(() => {
+    if (!tabEffectStartedRef.current) {
+      tabEffectStartedRef.current = true;
+      return;
+    }
+
+    loadTabData(tab);
+  }, [tab]);
+
+  const connectionIds = useMemo(
+    () => new Set(connections.map((connection) => connection.user.id)),
+    [connections]
+  );
+
+  const handleSendRequest = async () => {
+    if (!receiverId.trim()) {
+      setMessage("Enter a user UUID to send a connection request.");
+      return;
+    }
+
+    try {
+      const res = await sendConnectionRequest(receiverId.trim());
+      setMessage(res.data.message || "Connection request sent successfully.");
+      setReceiverId("");
+    } catch (err) {
+      console.log(err);
+      setMessage(getFriendlyError(err, "Failed to send request."));
+    }
+  };
+
+  const handlePendingAction = async (id, action) => {
+    try {
+      if (action === "accept") {
+        await acceptConnectionRequest(id);
+        setMessage("Connection request accepted.");
+      } else {
+        await rejectConnectionRequest(id);
+        setMessage("Connection request rejected.");
+      }
+      await loadTabData("requests", { force: true });
+      await loadTabData("connections", { force: true });
+    } catch (err) {
+      console.log(err);
+      setMessage(getFriendlyError(err, "Request update failed."));
+    }
+  };
+
+  const handleRemoveConnection = async (id) => {
+    try {
+      await removeConnection(id);
+      setMessage("Connection removed successfully.");
+      await loadTabData("connections", { force: true });
+      setGraph({ totalConnections: 0, graph: [] });
+    } catch (err) {
+      console.log(err);
+      setMessage(getFriendlyError(err, "Failed to remove connection."));
+    }
+  };
 
   return (
     <div className="bg-gray-50 min-h-screen">
@@ -24,47 +156,204 @@ export default function Networking() {
           <div className="rounded-3xl bg-white border border-gray-100 p-6 shadow-sm">
             <h1 className="text-3xl font-bold text-gray-900">Build Your Network</h1>
             <p className="mt-2 text-gray-500">
-              This section is still static for now, but the UI is ready for future connection and networking APIs.
+              Manage connection requests, accepted connections, and your shared graph. Use your UUID from profile when someone needs to send you a request.
             </p>
           </div>
 
-          <div className="mt-8 flex gap-3 border-b border-gray-200 pb-3">
-            {["suggestions", "connections", "requests"].map((item) => (
+          {message && (
+            <div className="mt-6 rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-700">
+              {message}
+            </div>
+          )}
+
+          <div className="mt-8 flex flex-wrap gap-3 border-b border-gray-200 pb-3">
+            {tabs.map((item) => (
               <button
-                key={item}
-                onClick={() => setTab(item)}
-                className={`rounded-full px-4 py-2 text-sm font-semibold capitalize transition ${
-                  tab === item
+                key={item.id}
+                onClick={() => setTab(item.id)}
+                className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
+                  tab === item.id
                     ? "bg-blue-600 text-white"
                     : "bg-white text-gray-600 border border-gray-200 hover:bg-gray-50"
                 }`}
               >
-                {item}
+                {item.label}
               </button>
             ))}
           </div>
 
-          {tab === "suggestions" && (
-            <div className="mt-6 grid md:grid-cols-2 xl:grid-cols-4 gap-6">
-              {users.map((user) => (
-                <div key={user.name} className="rounded-3xl bg-white p-5 shadow-sm border border-gray-100">
-                  <UserCard user={user} />
-                  <p className="mt-2 text-xs text-gray-400">{user.company}</p>
+          {loading ? (
+            <div className="mt-6 rounded-3xl bg-white p-6 shadow-sm border border-gray-100 text-sm text-gray-500">
+              Loading networking data...
+            </div>
+          ) : (
+            <>
+              {tab === "connect" && (
+                <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+                  <div className="rounded-3xl bg-white p-6 shadow-sm border border-gray-100">
+                    <h2 className="text-xl font-semibold text-gray-900">Send Connection Request</h2>
+                    <p className="mt-2 text-sm text-gray-500">
+                      Paste the other user's UUID and the backend will create a request if allowed.
+                    </p>
+
+                    <div className="mt-5 flex flex-col gap-3 md:flex-row">
+                      <input
+                        value={receiverId}
+                        onChange={(event) => setReceiverId(event.target.value)}
+                        placeholder="Enter receiver UUID"
+                        className="flex-1 rounded-2xl border border-gray-200 px-4 py-3 text-sm outline-none focus:border-blue-500"
+                      />
+                      <button
+                        onClick={handleSendRequest}
+                        className="rounded-2xl bg-blue-600 px-6 py-3 text-sm font-semibold text-white hover:bg-blue-700"
+                      >
+                        Send Request
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="rounded-3xl bg-white p-6 shadow-sm border border-gray-100">
+                    <h3 className="text-lg font-semibold text-gray-900">Quick Stats</h3>
+                    <div className="mt-5 space-y-4 text-sm">
+                      <div className="rounded-2xl bg-gray-50 px-4 py-3">
+                        <p className="text-xs uppercase tracking-wide text-gray-400">Connections</p>
+                        <p className="mt-1 text-2xl font-bold text-gray-900">{connections.length}</p>
+                      </div>
+                      <div className="rounded-2xl bg-gray-50 px-4 py-3">
+                        <p className="text-xs uppercase tracking-wide text-gray-400">UUID Sharing</p>
+                        <p className="mt-1 text-sm text-gray-700">Tell people to use your UUID from profile when sending requests.</p>
+                      </div>
+                    </div>
+                  </div>
                 </div>
-              ))}
-            </div>
-          )}
+              )}
 
-          {tab === "connections" && (
-            <div className="mt-6 rounded-3xl bg-white p-6 shadow-sm border border-gray-100">
-              <ConnectionsList />
-            </div>
-          )}
+              {tab === "connections" && (
+                <div className="mt-6 space-y-4">
+                  {connections.length ? (
+                    connections.map((connection) => (
+                      <div key={connection.connectionId} className="rounded-3xl bg-white p-5 shadow-sm border border-gray-100 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                        <div>
+                          <h3 className="font-semibold text-gray-900 break-all">{connection.user.email}</h3>
+                          <p className="mt-1 text-sm text-gray-500">
+                            Connected since {new Date(connection.connectedSince).toLocaleDateString()}
+                          </p>
+                        </div>
+                        <div className="flex flex-wrap gap-3">
+                          <button
+                            onClick={() =>
+                              navigate("/messages", {
+                                state: {
+                                  selectedUser: {
+                                    id: connection.user.id,
+                                    userId: connection.user.id,
+                                    email: connection.user.email,
+                                    name: connection.user.email,
+                                  },
+                                },
+                              })
+                            }
+                            className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+                          >
+                            Message
+                          </button>
+                          <button
+                            onClick={() => handleRemoveConnection(connection.connectionId)}
+                            className="rounded-xl border border-red-200 px-4 py-2 text-sm font-semibold text-red-600 hover:bg-red-50"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="rounded-3xl bg-white p-6 shadow-sm border border-gray-100 text-sm text-gray-500">
+                      No accepted connections yet.
+                    </div>
+                  )}
+                </div>
+              )}
 
-          {tab === "requests" && (
-            <div className="mt-6 rounded-3xl bg-white p-6 shadow-sm border border-gray-100">
-              <RequestsList />
-            </div>
+              {tab === "requests" && (
+                <div className="mt-6 space-y-4">
+                  {requests.length ? (
+                    requests.map((request) => (
+                      <div key={request.connectionId} className="rounded-3xl bg-white p-5 shadow-sm border border-gray-100 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                        <div>
+                          <h3 className="font-semibold text-gray-900 break-all">{request.from.email}</h3>
+                          <p className="mt-1 text-sm text-gray-500">
+                            Requested {new Date(request.requestedAt).toLocaleString()}
+                          </p>
+                        </div>
+                        <div className="flex gap-3">
+                          <button
+                            onClick={() => handlePendingAction(request.connectionId, "accept")}
+                            className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700"
+                          >
+                            Accept
+                          </button>
+                          <button
+                            onClick={() => handlePendingAction(request.connectionId, "reject")}
+                            className="rounded-xl border border-red-200 px-4 py-2 text-sm font-semibold text-red-600 hover:bg-red-50"
+                          >
+                            Reject
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="rounded-3xl bg-white p-6 shadow-sm border border-gray-100 text-sm text-gray-500">
+                      No pending connection requests.
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {tab === "graph" && (
+                <div className="mt-6 space-y-4">
+                  <div className="rounded-3xl bg-white p-6 shadow-sm border border-gray-100">
+                    <h2 className="text-xl font-semibold text-gray-900">Connection Graph</h2>
+                    <p className="mt-2 text-sm text-gray-500">
+                      Limited mutual graph based on your accepted connections.
+                    </p>
+                  </div>
+
+                  {graph.graph?.length ? (
+                    graph.graph.map((entry) => (
+                      <div key={entry.user.id} className="rounded-3xl bg-white p-5 shadow-sm border border-gray-100">
+                        <div className="flex items-start justify-between gap-4">
+                          <div>
+                            <h3 className="font-semibold text-gray-900 break-all">{entry.user.email}</h3>
+                            <p className="mt-1 text-sm text-gray-500">
+                              {connectionIds.has(entry.user.id) ? "Direct connection" : "Graph node"}
+                            </p>
+                          </div>
+                          <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">
+                            {entry.mutualConnections.length} mutual
+                          </span>
+                        </div>
+
+                        <div className="mt-4 flex flex-wrap gap-2">
+                          {entry.mutualConnections.length ? (
+                            entry.mutualConnections.map((mutual) => (
+                              <span key={mutual.id} className="rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-700">
+                                {mutual.email}
+                              </span>
+                            ))
+                          ) : (
+                            <p className="text-sm text-gray-500">No mutual connections exposed.</p>
+                          )}
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="rounded-3xl bg-white p-6 shadow-sm border border-gray-100 text-sm text-gray-500">
+                      Build a few accepted connections to see your graph here.
+                    </div>
+                  )}
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>

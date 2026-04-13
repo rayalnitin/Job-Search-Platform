@@ -12,5 +12,8 @@ export const deleteResume = (id) =>
 export const setActiveResume = (id) =>
   API.patch(`/resume/set-active/${id}`);
 
-export const downloadResume = (id) =>
-  API.get(`/resume/download/${id}`, { responseType: "blob" });
+export const requestResumeDownloadOtp = (id) =>
+  API.post(`/resume/request-download-otp/${id}`);
+
+export const downloadResume = (id, otpCode) =>
+  API.post(`/resume/download/${id}`, { otpCode }, { responseType: "blob" });

@@ -1,10 +1,11 @@
-import { useEffect, useState } from "react";
+﻿import { useEffect, useState } from "react";
 import Navbar from "../../components/Navbar";
 import Sidebar from "../../components/Sidebar";
 import {
   deleteResume,
   downloadResume,
   getResumes,
+  requestResumeDownloadOtp,
   setActiveResume,
   uploadResume,
 } from "../../api/resume";
@@ -14,6 +15,7 @@ export default function Resume() {
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [message, setMessage] = useState("");
+  const [otpInputs, setOtpInputs] = useState({});
 
   const fetchResumes = async () => {
     try {
@@ -21,6 +23,7 @@ export default function Resume() {
       setResumes(res.data);
     } catch (err) {
       console.log("Fetch resumes error:", err);
+      setMessage("Failed to load resumes.");
     } finally {
       setLoading(false);
     }
@@ -55,6 +58,7 @@ export default function Resume() {
     try {
       await deleteResume(id);
       setResumes((prev) => prev.filter((resume) => resume.id !== id));
+      setMessage("Resume deleted successfully.");
     } catch (err) {
       console.log("Delete resume error:", err);
       setMessage(err?.response?.data?.message || "Failed to delete resume.");
@@ -67,23 +71,46 @@ export default function Resume() {
       setResumes((prev) =>
         prev.map((resume) => ({ ...resume, isActive: resume.id === id }))
       );
+      setMessage("Active resume updated successfully.");
     } catch (err) {
       console.log("Set active resume error:", err);
       setMessage(err?.response?.data?.message || "Failed to set active resume.");
     }
   };
 
-  const handleDownload = async (id, filename) => {
+  const handleRequestOtp = async (id) => {
     try {
-      const res = await downloadResume(id);
+      await requestResumeDownloadOtp(id);
+      setMessage("OTP generated. Check the backend terminal and enter it below.");
+    } catch (err) {
+      console.log("Request OTP error:", err);
+      setMessage(err?.response?.data?.message || "Failed to request download OTP.");
+    }
+  };
+
+  const handleDownload = async (resume) => {
+    const otpCode = otpInputs[resume.id]?.trim();
+
+    if (!otpCode) {
+      setMessage("Enter the OTP before downloading your resume.");
+      return;
+    }
+
+    try {
+      const res = await downloadResume(resume.id, otpCode);
       const url = window.URL.createObjectURL(new Blob([res.data]));
       const link = document.createElement("a");
       link.href = url;
-      link.download = filename;
+      link.download = resume.filename;
       document.body.appendChild(link);
       link.click();
       link.remove();
       window.URL.revokeObjectURL(url);
+
+      setMessage(
+        res.headers["x-integrity-note"] || "Resume downloaded successfully."
+      );
+      setOtpInputs((prev) => ({ ...prev, [resume.id]: "" }));
     } catch (err) {
       console.log("Download resume error:", err);
       setMessage(err?.response?.data?.message || "Failed to download resume.");
@@ -99,7 +126,9 @@ export default function Resume() {
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between mb-8">
             <div>
               <h1 className="text-3xl font-bold">Resume Vault</h1>
-              <p className="text-gray-500">Manage your uploaded resumes and choose which one stays active.</p>
+              <p className="text-gray-500">
+                Manage encrypted resumes, switch the active version, and use OTP to download securely.
+              </p>
             </div>
 
             <label className="rounded-2xl bg-blue-600 px-5 py-3 text-white font-semibold hover:bg-blue-700 cursor-pointer">
@@ -140,13 +169,42 @@ export default function Resume() {
                     )}
                   </div>
 
+                  <div className="mt-4 rounded-2xl bg-gray-50 p-4 text-xs text-gray-500 space-y-2">
+                    <p>
+                      <span className="font-semibold text-gray-700">Integrity Hash:</span>{" "}
+                      <span className="break-all">{resume.fileHash || "Not available"}</span>
+                    </p>
+                    <p>
+                      <span className="font-semibold text-gray-700">PKI Signature:</span>{" "}
+                      {resume.hasPkiSignature ? "Present" : "Not available"}
+                    </p>
+                  </div>
+
+                  <div className="mt-5 space-y-3">
+                    <button
+                      onClick={() => handleRequestOtp(resume.id)}
+                      className="w-full rounded-xl border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+                    >
+                      Request Download OTP
+                    </button>
+
+                    <input
+                      value={otpInputs[resume.id] || ""}
+                      onChange={(event) =>
+                        setOtpInputs((prev) => ({ ...prev, [resume.id]: event.target.value }))
+                      }
+                      placeholder="Enter OTP from backend terminal"
+                      className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm outline-none focus:border-blue-500"
+                    />
+                  </div>
+
                   <div className="mt-5 flex flex-wrap gap-3">
                     {!resume.isActive && (
                       <button onClick={() => handleSetActive(resume.id)} className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700">
                         Set Active
                       </button>
                     )}
-                    <button onClick={() => handleDownload(resume.id, resume.filename)} className="rounded-xl border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+                    <button onClick={() => handleDownload(resume)} className="rounded-xl border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
                       Download
                     </button>
                     <button onClick={() => handleDelete(resume.id)} className="rounded-xl px-4 py-2 text-sm font-semibold text-red-500 hover:bg-red-50">
