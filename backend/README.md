@@ -11,6 +11,7 @@ A secure job search and professional networking platform backend built with Nest
 - **Authentication**: JWT + Argon2
 - **Encryption**: AES-256-CBC (server-side messages + resumes) + Client-side RSA (E2EE messages)
 - **PKI**: RSA-2048 / SHA-256 (resume integrity + message signing + E2EE key infrastructure)
+- **Audit Logging**: SHA-256 hash-chain + Blockchain with Proof-of-Work (difficulty 4)
 - **Rate Limiting**: @nestjs/throttler
 - **Security Headers**: Helmet
 
@@ -88,9 +89,7 @@ ALLOWED_ORIGINS=http://localhost:3000,http://localhost:5173,https://192.168.2.23
 npm run start:dev
 ```
 
-TypeORM will automatically create/migrate all database tables on first run.
-
-On first run, the server generates an RSA-2048 key pair and saves it to `keys/server.private.pem` and `keys/server.public.pem`.
+TypeORM automatically creates all tables on first run. On first run, an RSA-2048 key pair is generated and saved to `keys/`.
 
 ```bash
 echo "keys/" >> .gitignore
@@ -100,15 +99,10 @@ echo "keys/" >> .gitignore
 
 ## VM Deployment
 
-The backend is deployed on a university-provided VM at `192.168.2.236`, running behind Nginx with HTTPS (self-signed certificate).
-
-### Stack on VM
+Deployed on a university VM at `192.168.2.236`, behind Nginx with HTTPS (self-signed certificate).
 
 - **Process Manager**: PM2
-- **Reverse Proxy**: Nginx (port 443 → localhost:3000)
-- **SSL**: Self-signed certificate
-
-### Deploy / Update backend on VM
+- **Reverse Proxy**: Nginx (443 → localhost:3000)
 
 ```bash
 scp -r ./backend/src iiitd@192.168.2.236:~/job-portal/backend/
@@ -119,6 +113,7 @@ pm2 logs jobportal
 ```
 
 ```bash
+# Also copy keys to preserve PKI signatures
 scp -r ./backend/keys iiitd@192.168.2.236:~/job-portal/backend/
 ```
 
@@ -132,14 +127,14 @@ src/
 ├── users/            # Profiles, field-level privacy, viewer tracking, avatar
 ├── otp/              # OTP generation and verification
 ├── resume/           # Resume upload, AES encryption, PKI signing, OTP download
-├── admin/            # Admin dashboard, audit log viewer
+├── admin/            # Admin dashboard, audit logs, blockchain
 ├── companies/        # Company pages and job postings
 ├── applications/     # Job applications, status tracking, shortlisting
-├── messages/         # Server-side encrypted 1-to-1, group, and E2EE messaging
+├── messages/         # Server-side 1-to-1, group, and E2EE messaging
 ├── connections/      # Connection requests, acceptance, graph
-├── audit/            # Hash-chained tamper-evident audit logging
+├── audit/            # Hash-chain + blockchain tamper-evident audit logging
 ├── pki/              # RSA key management, sign/verify utilities
-└── common/           # Shared guards, decorators, utilities
+└── common/           # Guards, decorators, utilities
 keys/
 ├── server.private.pem
 └── server.public.pem
@@ -165,37 +160,29 @@ keys/
 
 ### Users & Profiles
 
-| Method | Endpoint                 | Description                                             | Auth |
-| ------ | ------------------------ | ------------------------------------------------------- | ---- |
-| GET    | `/users/profile`         | Own full profile (includes privacy + avatar flag)       | Yes  |
-| PATCH  | `/users/profile`         | Update profile fields, privacy settings, viewer opt-out | Yes  |
-| GET    | `/users/profile/viewers` | My viewer count + recent viewers list                   | Yes  |
-| GET    | `/users/profile/:id`     | Another user's profile (privacy-filtered)               | Yes  |
-| POST   | `/users/profile/avatar`  | Upload profile picture (JPEG/PNG/WEBP, max 2MB)         | Yes  |
-| DELETE | `/users/profile/avatar`  | Delete own avatar                                       | Yes  |
-| GET    | `/users/avatar/:id`      | Fetch avatar image bytes (public, no auth needed)       | No   |
+| Method | Endpoint                 | Description                               | Auth |
+| ------ | ------------------------ | ----------------------------------------- | ---- |
+| GET    | `/users/profile`         | Own full profile                          | Yes  |
+| PATCH  | `/users/profile`         | Update profile, privacy, viewer opt-out   | Yes  |
+| GET    | `/users/profile/viewers` | My viewer count + recent viewers          | Yes  |
+| GET    | `/users/profile/:id`     | Another user's profile (privacy-filtered) | Yes  |
+| POST   | `/users/profile/avatar`  | Upload avatar (JPEG/PNG/WEBP, max 2MB)    | Yes  |
+| DELETE | `/users/profile/avatar`  | Delete own avatar                         | Yes  |
+| GET    | `/users/avatar/:id`      | Fetch avatar bytes (public, no auth)      | No   |
 
-#### Profile Fields
+#### Profile Fields & Privacy
 
-| Field        | Privacy Controlled  | Privacy Setting Key |
-| ------------ | ------------------- | ------------------- |
-| `name`       | No — always visible | —                   |
-| `headline`   | Yes                 | `headlinePrivacy`   |
-| `location`   | Yes                 | `locationPrivacy`   |
-| `bio`        | Yes                 | `bioPrivacy`        |
-| `education`  | Yes                 | `educationPrivacy`  |
-| `experience` | Yes                 | `experiencePrivacy` |
-| `skills`     | Yes                 | `skillsPrivacy`     |
+| Field        | Privacy Setting                     |
+| ------------ | ----------------------------------- |
+| `name`       | Always visible — no privacy control |
+| `headline`   | `headlinePrivacy`                   |
+| `location`   | `locationPrivacy`                   |
+| `bio`        | `bioPrivacy`                        |
+| `education`  | `educationPrivacy`                  |
+| `experience` | `experiencePrivacy`                 |
+| `skills`     | `skillsPrivacy`                     |
 
-#### Privacy Values
-
-| Value           | Visible to                         |
-| --------------- | ---------------------------------- |
-| `"public"`      | Everyone (default)                 |
-| `"connections"` | Accepted connections + admins only |
-| `"private"`     | Owner + admins only                |
-
-**Update privacy example:**
+Privacy values: `"public"` (default) · `"connections"` · `"private"`
 
 ```json
 PATCH /users/profile
@@ -206,21 +193,23 @@ PATCH /users/profile
 }
 ```
 
+Hidden fields return `null` when viewed by unauthorized viewers. The `privacy` block is always included in responses so the frontend knows why.
+
 **Own profile response:**
 
 ```json
 {
   "id": "uuid",
   "email": "user@example.com",
-  "phone": "+91xxxxxxxxxx",
+  "phone": "...",
   "role": "user",
   "name": "John Doe",
-  "headline": "Software Engineer",
-  "location": "New Delhi",
+  "headline": "...",
+  "location": "...",
   "bio": "...",
   "education": "...",
   "experience": "...",
-  "skills": "TypeScript, NestJS",
+  "skills": "...",
   "hasAvatar": true,
   "privacy": {
     "headlinePrivacy": "public",
@@ -234,24 +223,21 @@ PATCH /users/profile
 }
 ```
 
-**Viewing another user's profile:** Hidden fields return `null`. The `privacy` block is always included so the frontend can display "This field is private" instead of just a blank.
+#### Avatar
 
-#### Avatar Upload
-
-Send as `multipart/form-data` with field name `avatar`.
+Upload via `multipart/form-data` with field name `avatar`. Display with:
 
 ```html
-<!-- Display in frontend -->
 <img src="https://your-api/users/avatar/{userId}" />
 ```
 
-The avatar endpoint has no auth guard and sets a 1-hour browser cache header. Check `hasAvatar: true` in profile before making the request.
+No auth needed. 1-hour browser cache header set automatically.
 
 #### Profile Viewer Tracking
 
-- View logged on every `GET /users/profile/:id` call (not own profile)
-- Same viewer + same target within 1 hour = deduplicated, counted once
-- `optOutOfViewers: true` = your views are never recorded anywhere
+- View logged on every `GET /users/profile/:id` (not own)
+- Same viewer + same target within 1 hour = deduplicated
+- `optOutOfViewers: true` = never recorded anywhere
 
 ```json
 GET /users/profile/viewers
@@ -267,34 +253,27 @@ GET /users/profile/viewers
 
 ### Connections
 
-| Method | Endpoint                  | Description                    | Auth |
-| ------ | ------------------------- | ------------------------------ | ---- |
-| POST   | `/connections/request`    | Send connection request        | Yes  |
-| GET    | `/connections`            | List accepted connections      | Yes  |
-| GET    | `/connections/pending`    | List incoming pending requests | Yes  |
-| GET    | `/connections/graph`      | Limited connection graph       | Yes  |
-| PATCH  | `/connections/:id/accept` | Accept a request               | Yes  |
-| PATCH  | `/connections/:id/reject` | Reject a request               | Yes  |
-| DELETE | `/connections/:id`        | Remove connection              | Yes  |
-
-**Send request:**
+| Method | Endpoint                  | Description               | Auth |
+| ------ | ------------------------- | ------------------------- | ---- |
+| POST   | `/connections/request`    | Send connection request   | Yes  |
+| GET    | `/connections`            | My accepted connections   | Yes  |
+| GET    | `/connections/pending`    | Incoming pending requests | Yes  |
+| GET    | `/connections/graph`      | Limited connection graph  | Yes  |
+| PATCH  | `/connections/:id/accept` | Accept request            | Yes  |
+| PATCH  | `/connections/:id/reject` | Reject request            | Yes  |
+| DELETE | `/connections/:id`        | Remove connection         | Yes  |
 
 ```json
 POST /connections/request
 { "receiverId": "uuid" }
 ```
 
-**Rules:**
+Rules: no self-connect · no duplicates · rejected → re-request allowed · only receiver accepts/rejects · either party removes.
 
-- Cannot connect with yourself
-- No duplicate requests (pending or accepted)
-- Previously rejected → new request allowed
-- Only receiver can accept/reject
-- Either party can remove
-
-**Connection graph** (`GET /connections/graph`) returns your connections and which of their connections are mutual with you. Strangers never exposed.
+**Graph** returns your connections + their mutual connections with you. Strangers never exposed.
 
 ```json
+GET /connections/graph
 {
   "totalConnections": 3,
   "graph": [
@@ -310,194 +289,176 @@ POST /connections/request
 
 ### Resume
 
-| Method | Endpoint                           | Description                              | Auth |
-| ------ | ---------------------------------- | ---------------------------------------- | ---- |
-| POST   | `/resume/upload`                   | Upload PDF/DOCX (encrypted + PKI signed) | Yes  |
-| GET    | `/resume`                          | List your resumes                        | Yes  |
-| POST   | `/resume/request-download-otp/:id` | Request download OTP                     | Yes  |
-| POST   | `/resume/download/:id`             | Download (OTP in body)                   | Yes  |
-| DELETE | `/resume/:id`                      | Delete a resume                          | Yes  |
-| PATCH  | `/resume/set-active/:id`           | Set active resume                        | Yes  |
+| Method | Endpoint                           | Description                                  | Auth |
+| ------ | ---------------------------------- | -------------------------------------------- | ---- |
+| POST   | `/resume/upload`                   | Upload PDF/DOCX (AES encrypted + PKI signed) | Yes  |
+| GET    | `/resume`                          | List your resumes                            | Yes  |
+| POST   | `/resume/request-download-otp/:id` | Request download OTP                         | Yes  |
+| POST   | `/resume/download/:id`             | Download (OTP in body)                       | Yes  |
+| DELETE | `/resume/:id`                      | Delete resume                                | Yes  |
+| PATCH  | `/resume/set-active/:id`           | Set active resume                            | Yes  |
+
+Download flow:
+
+```
+1. POST /resume/request-download-otp/:id  → OTP in terminal
+2. POST /resume/download/:id  { "otpCode": "123456" }
+   Headers: X-Integrity-Verified, X-Integrity-Note, X-File-Hash
+```
 
 ---
 
 ### PKI
 
-| Method | Endpoint          | Description                     | Auth |
-| ------ | ----------------- | ------------------------------- | ---- |
-| GET    | `/pki/public-key` | Get server RSA public key (PEM) | No   |
+| Method | Endpoint          | Description                 | Auth |
+| ------ | ----------------- | --------------------------- | ---- |
+| GET    | `/pki/public-key` | Server RSA public key (PEM) | No   |
 
 ---
 
 ### Companies
 
-| Method | Endpoint         | Description            | Auth              |
-| ------ | ---------------- | ---------------------- | ----------------- |
-| POST   | `/companies`     | Create company page    | Yes (Recruiter)   |
-| GET    | `/companies`     | List all companies     | No                |
-| GET    | `/companies/:id` | Company details + jobs | No                |
-| PATCH  | `/companies/:id` | Update company         | Yes (Owner/Admin) |
+| Method | Endpoint         | Description    | Auth              |
+| ------ | ---------------- | -------------- | ----------------- |
+| POST   | `/companies`     | Create company | Yes (Recruiter)   |
+| GET    | `/companies`     | List all       | No                |
+| GET    | `/companies/:id` | Details + jobs | No                |
+| PATCH  | `/companies/:id` | Update         | Yes (Owner/Admin) |
 
 ---
 
 ### Jobs
 
-| Method | Endpoint                     | Description      | Auth              |
-| ------ | ---------------------------- | ---------------- | ----------------- |
-| POST   | `/companies/:companyId/jobs` | Post a job       | Yes (Recruiter)   |
-| GET    | `/jobs`                      | Search/list jobs | No                |
-| GET    | `/jobs/:id`                  | Job details      | No                |
-| PATCH  | `/jobs/:id`                  | Update job       | Yes (Owner/Admin) |
-| DELETE | `/jobs/:id`                  | Delete job       | Yes (Owner/Admin) |
+| Method | Endpoint                     | Description | Auth              |
+| ------ | ---------------------------- | ----------- | ----------------- |
+| POST   | `/companies/:companyId/jobs` | Post job    | Yes (Recruiter)   |
+| GET    | `/jobs`                      | Search/list | No                |
+| GET    | `/jobs/:id`                  | Job details | No                |
+| PATCH  | `/jobs/:id`                  | Update      | Yes (Owner/Admin) |
+| DELETE | `/jobs/:id`                  | Delete      | Yes (Owner/Admin) |
 
-**Search params (`GET /jobs`):** `keyword`, `location`, `type`, `locationType`, `skill`
+Search params: `keyword` · `location` · `type` · `locationType` · `skill`
 
 ---
 
 ### Applications
 
-| Method | Endpoint                                    | Description            | Auth                  |
-| ------ | ------------------------------------------- | ---------------------- | --------------------- |
-| POST   | `/applications`                             | Apply to a job         | Yes (User)            |
-| GET    | `/applications/mine`                        | My applications        | Yes (User)            |
-| GET    | `/applications/job/:jobId`                  | All applicants for job | Yes (Recruiter/Admin) |
-| GET    | `/applications/job/:jobId?shortlisted=true` | Shortlisted only       | Yes (Recruiter/Admin) |
-| GET    | `/applications/:id`                         | Single application     | Yes                   |
-| PATCH  | `/applications/:id/status`                  | Update status          | Yes (Recruiter/Admin) |
-| PATCH  | `/applications/:id/shortlist`               | Shortlist/un-shortlist | Yes (Recruiter/Admin) |
-
-**Apply:**
+| Method | Endpoint                                    | Description        | Auth                  |
+| ------ | ------------------------------------------- | ------------------ | --------------------- |
+| POST   | `/applications`                             | Apply to job       | Yes (User)            |
+| GET    | `/applications/mine`                        | My applications    | Yes (User)            |
+| GET    | `/applications/job/:jobId`                  | All applicants     | Yes (Recruiter/Admin) |
+| GET    | `/applications/job/:jobId?shortlisted=true` | Shortlisted only   | Yes (Recruiter/Admin) |
+| GET    | `/applications/:id`                         | Single application | Yes                   |
+| PATCH  | `/applications/:id/status`                  | Update status      | Yes (Recruiter/Admin) |
+| PATCH  | `/applications/:id/shortlist`               | Shortlist toggle   | Yes (Recruiter/Admin) |
 
 ```json
 POST /applications
 { "jobId": "uuid", "resumeId": "uuid", "coverNote": "..." }
-```
 
-**Update status:**
-
-```json
 PATCH /applications/:id/status
 { "status": "reviewed", "recruiterNotes": "Strong candidate" }
-```
 
-**Shortlist:**
-
-```json
 PATCH /applications/:id/shortlist
 { "isShortlisted": true }
 ```
 
 Status flow: `applied` → `reviewed` → `interviewed` → `rejected` / `offer`
 
+`recruiterNotes` never visible to applicant. `statusHistory` records every change with timestamp and actor.
+
 ---
 
 ### Messages — One-to-One (Server-Side Encrypted)
 
-| Method | Endpoint            | Description                   | Auth |
-| ------ | ------------------- | ----------------------------- | ---- |
-| POST   | `/messages`         | Send encrypted message        | Yes  |
-| GET    | `/messages`         | Inbox preview                 | Yes  |
-| GET    | `/messages/:userId` | Full conversation (decrypted) | Yes  |
+| Method | Endpoint            | Description                              | Auth |
+| ------ | ------------------- | ---------------------------------------- | ---- |
+| POST   | `/messages`         | Send encrypted message                   | Yes  |
+| GET    | `/messages`         | Inbox preview                            | Yes  |
+| GET    | `/messages/:userId` | Full conversation (decrypted + verified) | Yes  |
 
-Messages are encrypted with AES-256-CBC. SHA-256 hash of plaintext is RSA-signed on send and re-verified on fetch.
+AES-256-CBC at rest. RSA-SHA256 signed on send, verified on fetch.
 
 ```json
 POST /messages
 { "receiverId": "uuid", "content": "Hello!" }
 ```
 
+Response per message:
+
+```json
+{
+  "id": "uuid",
+  "from": "me",
+  "content": "Hello!",
+  "isRead": true,
+  "sentAt": "...",
+  "integrity": { "verified": true, "note": "RSA-SHA256 signature verified..." }
+}
+```
+
 ---
 
 ### Messages — Group (Server-Side Encrypted)
 
-| Method | Endpoint                                    | Description                       | Auth          |
-| ------ | ------------------------------------------- | --------------------------------- | ------------- |
-| POST   | `/messages/groups`                          | Create group                      | Yes           |
-| GET    | `/messages/groups`                          | My groups                         | Yes           |
-| POST   | `/messages/groups/:id/participants`         | Add participant (creator only)    | Yes           |
-| DELETE | `/messages/groups/:id/participants/:userId` | Remove participant (creator only) | Yes           |
-| POST   | `/messages/groups/:id/send`                 | Send to group                     | Yes (members) |
-| GET    | `/messages/groups/:id`                      | Full conversation (decrypted)     | Yes (members) |
-
-**Create group:**
+| Method | Endpoint                                    | Description                              | Auth          |
+| ------ | ------------------------------------------- | ---------------------------------------- | ------------- |
+| POST   | `/messages/groups`                          | Create group                             | Yes           |
+| GET    | `/messages/groups`                          | My groups                                | Yes           |
+| POST   | `/messages/groups/:id/participants`         | Add participant (creator)                | Yes           |
+| DELETE | `/messages/groups/:id/participants/:userId` | Remove participant (creator)             | Yes           |
+| POST   | `/messages/groups/:id/send`                 | Send to group                            | Yes (members) |
+| GET    | `/messages/groups/:id`                      | Full conversation (decrypted + verified) | Yes (members) |
 
 ```json
 POST /messages/groups
 { "name": "Interview Panel", "participantIds": ["uuid-1", "uuid-2"] }
 ```
 
-**Rules:** Creator auto-added. Min 2 participants always. Only creator adds/removes. Only members read/send.
-
-**Group conversation response:**
-
-```json
-{
-  "group": {
-    "id": "uuid", "name": "Interview Panel",
-    "createdBy": { "id": "uuid", "email": "recruiter@example.com" },
-    "participants": [...]
-  },
-  "messages": [
-    {
-      "id": "uuid", "from": "me", "senderId": "uuid",
-      "content": "Meeting at 3pm?", "sentAt": "...",
-      "integrity": { "verified": true, "note": "RSA-SHA256 signature verified..." }
-    }
-  ]
-}
-```
+Rules: creator auto-added · min 2 participants always · only creator manages members · only members read/send · same AES + PKI as 1-to-1.
 
 ---
 
 ### Messages — E2EE (End-to-End Encrypted)
 
-True E2EE — the **server never sees plaintext**. The client generates a key pair, encrypts messages using the recipient's public key before sending. Server stores only ciphertext.
+Server **never sees plaintext**. Client encrypts with recipient's public key before sending.
 
-| Method | Endpoint                      | Description                              | Auth |
-| ------ | ----------------------------- | ---------------------------------------- | ---- |
-| POST   | `/messages/e2ee/keys`         | Register client public key               | Yes  |
-| GET    | `/messages/e2ee/keys/:userId` | Get a user's public key                  | Yes  |
-| GET    | `/messages/e2ee`              | E2EE inbox preview                       | Yes  |
-| POST   | `/messages/e2ee`              | Send E2EE message (ciphertext only)      | Yes  |
-| GET    | `/messages/e2ee/:userId`      | Fetch E2EE conversation (raw ciphertext) | Yes  |
+| Method | Endpoint                      | Description                         | Auth |
+| ------ | ----------------------------- | ----------------------------------- | ---- |
+| POST   | `/messages/e2ee/keys`         | Register client public key          | Yes  |
+| GET    | `/messages/e2ee/keys/:userId` | Get user's public key               | Yes  |
+| GET    | `/messages/e2ee`              | E2EE inbox preview                  | Yes  |
+| POST   | `/messages/e2ee`              | Send E2EE message                   | Yes  |
+| GET    | `/messages/e2ee/:userId`      | Fetch conversation (raw ciphertext) | Yes  |
 
-#### E2EE Flow (Frontend Must Implement)
+#### E2EE Flow
 
 ```
-Step 1 — Key setup (once per session):
-  Client generates RSA key pair in browser (e.g. WebCrypto API)
-  POST /messages/e2ee/keys  { "publicKey": "<PEM or base64>" }
-  Private key stays in browser — never sent to server
+1. Key setup (once per session):
+   Client generates RSA key pair in browser (WebCrypto API)
+   POST /messages/e2ee/keys  { "publicKey": "<PEM>" }
+   Private key stays in browser — NEVER sent to server
 
-Step 2 — Send a message:
-  GET /messages/e2ee/keys/:receiverId   → get recipient's public key
-  Encrypt content client-side using recipient's public key
-  POST /messages/e2ee  { "receiverId": "uuid", "ciphertext": "<encrypted>" }
-  Server stores ciphertext as-is, signs its hash for tamper-evidence
+2. Send a message:
+   GET /messages/e2ee/keys/:receiverId   → recipient's public key
+   Encrypt content client-side with recipient's public key
+   POST /messages/e2ee  { "receiverId": "uuid", "ciphertext": "<encrypted>" }
 
-Step 3 — Read messages:
-  GET /messages/e2ee/:userId   → raw ciphertext returned
-  Decrypt each message client-side using your private key
+3. Read messages:
+   GET /messages/e2ee/:userId   → raw ciphertext returned
+   Decrypt client-side with your private key
 ```
-
-**Register public key:**
 
 ```json
 POST /messages/e2ee/keys
 { "publicKey": "-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----" }
-```
 
-**Send E2EE message:**
-
-```json
 POST /messages/e2ee
-{
-  "receiverId": "uuid",
-  "ciphertext": "<base64-encrypted-content>"
-}
+{ "receiverId": "uuid", "ciphertext": "<base64-encrypted-blob>" }
 ```
 
-**E2EE conversation response:**
+Conversation response:
 
 ```json
 [
@@ -505,9 +466,9 @@ POST /messages/e2ee
     "id": "uuid",
     "from": "me",
     "senderId": "uuid",
-    "ciphertext": "<base64-encrypted-content>",
+    "ciphertext": "<base64>",
     "isRead": true,
-    "sentAt": "2026-04-13T08:00:00.000Z",
+    "sentAt": "...",
     "integrity": {
       "verified": true,
       "note": "RSA-SHA256 signature verified. Ciphertext integrity confirmed. Decrypt using your private key."
@@ -516,100 +477,197 @@ POST /messages/e2ee
 ]
 ```
 
-**E2EE inbox preview:**
+Inbox returns `"encrypted": true` — no content preview since server cannot decrypt.
 
-```json
-[
-  {
-    "partnerId": "uuid",
-    "partnerEmail": "alice@example.com",
-    "lastMessageAt": "2026-04-13T08:00:00.000Z",
-    "unreadCount": 2,
-    "encrypted": true
-  }
-]
-```
-
-> Note: Inbox preview intentionally omits message content — server cannot decrypt E2EE messages.
-
-**Errors:**
-
-- `400` if recipient has not registered a public key → ask them to enable E2EE first
-- `400` if sender tries to message themselves
-
-**Server-side PKI role in E2EE:**
-The server signs a SHA-256 hash of the **ciphertext** (not plaintext) on receipt. On fetch, this signature is verified. This proves the ciphertext was not altered in the database after the sender submitted it — integrity without decryption.
+Errors: `400` if recipient has no public key registered.
 
 ---
 
-### Admin
+### Admin — Audit Logs & Blockchain
 
-| Method | Endpoint                     | Description                 | Auth        |
-| ------ | ---------------------------- | --------------------------- | ----------- |
-| GET    | `/admin/users`               | List all users              | Yes (Admin) |
-| GET    | `/admin/users/:id`           | User with profile           | Yes (Admin) |
-| PATCH  | `/admin/users/:id/suspend`   | Suspend user                | Yes (Admin) |
-| PATCH  | `/admin/users/:id/unsuspend` | Unsuspend user              | Yes (Admin) |
-| DELETE | `/admin/users/:id`           | Delete user                 | Yes (Admin) |
-| GET    | `/admin/logs`                | View audit trail            | Yes (Admin) |
-| GET    | `/admin/logs/verify`         | Verify hash-chain integrity | Yes (Admin) |
+| Method | Endpoint                     | Description                          | Auth        |
+| ------ | ---------------------------- | ------------------------------------ | ----------- |
+| GET    | `/admin/logs`                | All audit log entries                | Yes (Admin) |
+| GET    | `/admin/logs/verify`         | Verify hash-chain integrity          | Yes (Admin) |
+| POST   | `/admin/blockchain/mine`     | Mine new block from unsealed entries | Yes (Admin) |
+| GET    | `/admin/blockchain`          | View full blockchain                 | Yes (Admin) |
+| GET    | `/admin/blockchain/verify`   | Full blockchain integrity check      | Yes (Admin) |
+| GET    | `/admin/users`               | List all users                       | Yes (Admin) |
+| GET    | `/admin/users/:id`           | User with profile                    | Yes (Admin) |
+| PATCH  | `/admin/users/:id/suspend`   | Suspend user                         | Yes (Admin) |
+| PATCH  | `/admin/users/:id/unsuspend` | Unsuspend user                       | Yes (Admin) |
+| DELETE | `/admin/users/:id`           | Delete user                          | Yes (Admin) |
+
+#### Hash-Chain Audit Log
+
+Every critical action is logged with SHA-256 hash chaining. Each entry's hash includes the previous entry's hash, creating an append-only chain.
+
+`GET /admin/logs/verify` response:
+
+```json
+{
+  "valid": true,
+  "totalEntries": 42,
+  "firstTamperedId": null,
+  "message": "All 42 audit log entries verified. Chain is intact."
+}
+```
+
+#### Blockchain (Bonus)
+
+The blockchain layer seals batches of audit entries into immutable blocks with **Proof-of-Work** (difficulty 4 — blockHash must start with `0000`).
+
+**How it works:**
+
+1. Audit entries accumulate as normal in `audit_logs`
+2. Admin calls `POST /admin/blockchain/mine` to seal all unsealed entries into a new block
+3. Server computes a **Merkle root** from all entry hashes in the batch
+4. Server runs **proof-of-work**: increments nonce until `SHA-256(index|previousHash|merkleRoot|timestamp|nonce)` starts with `0000`
+5. Block is saved with its hash, nonce, Merkle root, and list of sealed entry IDs
+6. `GET /admin/blockchain/verify` checks chain linkage, block hash, PoW validity, and Merkle root against actual entries
+
+**Mine a block:**
+
+```
+POST /admin/blockchain/mine
+Response:
+{
+  "message": "Block #3 mined successfully with 12 audit entries.",
+  "block": {
+    "index": 3,
+    "blockHash": "00003f9a...",
+    "merkleRoot": "a3f9...",
+    "nonce": 18432,
+    "difficulty": 4,
+    "entryCount": 12,
+    "timestamp": "2026-04-13T10:00:00.000Z"
+  }
+}
+```
+
+**View blockchain:**
+
+```json
+GET /admin/blockchain
+{
+  "totalBlocks": 4,
+  "unsealedEntries": 7,
+  "blocks": [
+    {
+      "index": 0,
+      "blockHash": "00001a2b...",
+      "previousHash": "GENESIS",
+      "merkleRoot": "f3a9...",
+      "nonce": 9823,
+      "difficulty": 4,
+      "entryCount": 5,
+      "auditEntryIds": ["uuid-1", "uuid-2", "..."],
+      "timestamp": "..."
+    }
+  ]
+}
+```
+
+**Verify blockchain:**
+
+```json
+GET /admin/blockchain/verify
+{
+  "valid": true,
+  "totalBlocks": 4,
+  "firstInvalidBlockIndex": null,
+  "message": "All 4 blocks verified. Blockchain is intact.",
+  "details": [
+    { "blockIndex": 0, "valid": true },
+    { "blockIndex": 1, "valid": true },
+    { "blockIndex": 2, "valid": true },
+    { "blockIndex": 3, "valid": true }
+  ]
+}
+```
+
+Verify checks (per block):
+
+1. `previousHash` links correctly to prior block
+2. `blockHash` recomputes correctly from block content
+3. `blockHash` starts with `0000` (PoW valid)
+4. Merkle root matches the actual audit entries sealed in the block
 
 ---
 
 ## Security Features
 
-| Feature                        | Implementation                                                  |
-| ------------------------------ | --------------------------------------------------------------- |
-| Password hashing               | Argon2                                                          |
-| Authentication                 | JWT + RBAC (user / recruiter / admin)                           |
-| Resume encryption              | AES-256-CBC at rest                                             |
-| Resume integrity               | RSA-2048/SHA-256 verified on download                           |
-| Server-side message encryption | AES-256-CBC (1-to-1 + group)                                    |
-| Server-side message integrity  | RSA-2048/SHA-256 verified on fetch                              |
-| E2EE messaging                 | Client-side RSA encryption — server stores ciphertext only      |
-| E2EE ciphertext integrity      | Server signs ciphertext hash — proves DB not tampered           |
-| OTP verification               | Registration, password reset, resume download, account deletion |
-| Audit logging                  | SHA-256 hash-chained tamper-evident logs                        |
-| Rate limiting                  | Per-endpoint throttling                                         |
-| Security headers               | Helmet                                                          |
-| CORS                           | Restricted origins                                              |
-| Input validation               | Global ValidationPipe whitelist                                 |
-| Suspended accounts             | Blocked at login                                                |
-| Field-level privacy            | public / connections / private per profile field                |
-| Profile viewer tracking        | Opt-out + 1-hour dedup                                          |
-| Avatar upload                  | JPEG/PNG/WEBP, 2MB max, public endpoint                         |
+| Feature                        | Implementation                                                     |
+| ------------------------------ | ------------------------------------------------------------------ |
+| Password hashing               | Argon2                                                             |
+| Authentication                 | JWT + RBAC (user / recruiter / admin)                              |
+| Resume encryption              | AES-256-CBC at rest                                                |
+| Resume integrity               | RSA-2048/SHA-256 verified on every download                        |
+| Server-side message encryption | AES-256-CBC (1-to-1 + group)                                       |
+| Server-side message integrity  | RSA-2048/SHA-256 verified on every fetch                           |
+| E2EE messaging                 | Client-side RSA — server stores ciphertext only, never decrypts    |
+| E2EE ciphertext integrity      | Server PKI-signs ciphertext hash — proves DB not tampered          |
+| OTP verification               | Registration, password reset, resume download, account deletion    |
+| Hash-chain audit log           | SHA-256 chained entries — insertion/deletion/reorder detected      |
+| Blockchain audit log           | PoW difficulty-4, Merkle root, block chain linkage — bonus feature |
+| Rate limiting                  | Per-endpoint throttling                                            |
+| Security headers               | Helmet (XSS, clickjacking, MIME sniffing)                          |
+| CORS                           | Restricted to configured origins                                   |
+| Input validation               | Global ValidationPipe whitelist + forbidNonWhitelisted             |
+| Suspended accounts             | Blocked at login                                                   |
+| Field-level profile privacy    | public / connections / private per field                           |
+| Profile viewer tracking        | Opt-out + 1-hour deduplication                                     |
+| Avatar upload                  | JPEG/PNG/WEBP, 2MB max, public endpoint with cache headers         |
 
 ---
 
 ## Audit Logging
 
-Logged actions: registration, login, password reset, account deletion, resume download, company/job CRUD, application submit/status, messages sent (all types), group created, user suspend/delete, profile viewed.
+Logged actions: registration · login · password reset · account deletion · resume download · company/job CRUD · application submit/update · all message types sent · group created · user suspend/delete/unsuspend · profile viewed.
 
-Each entry: `action`, `performedBy`, `targetId`, `targetType`, `metadata`, `previousHash`, `entryHash`, `createdAt`.
-
-Verify: `GET /admin/logs/verify`
+Each entry: `action` · `performedBy` · `targetId` · `targetType` · `metadata` · `previousHash` · `entryHash` · `createdAt`
 
 ---
 
 ## Database Tables
 
-| Table                 | Description                                             |
-| --------------------- | ------------------------------------------------------- |
-| `users`               | Accounts, roles, verification, E2EE public key          |
-| `profiles`            | Profile fields, privacy settings, avatar, opt-out       |
-| `profile_views`       | Viewer tracking log                                     |
-| `connections`         | Connection requests and accepted connections            |
-| `otps`                | OTP codes with purpose and expiry                       |
-| `resumes`             | Encrypted resumes with PKI signatures                   |
-| `companies`           | Company pages                                           |
-| `jobs`                | Job postings                                            |
-| `applications`        | Applications with status history and shortlist          |
-| `messages`            | Server-side AES encrypted 1-to-1 messages               |
-| `group_conversations` | Group chat rooms                                        |
-| `group_participants`  | Group membership join table                             |
-| `group_messages`      | Server-side AES encrypted group messages                |
-| `e2ee_messages`       | E2EE messages (ciphertext only — server never decrypts) |
-| `audit_logs`          | Hash-chained audit trail                                |
+| Table                 | Description                                                       |
+| --------------------- | ----------------------------------------------------------------- |
+| `users`               | Accounts, roles, verification status, E2EE public key             |
+| `profiles`            | Profile fields, privacy settings, avatar bytes, viewer opt-out    |
+| `profile_views`       | Profile view log (deduplicated)                                   |
+| `connections`         | Connection requests and accepted connections                      |
+| `otps`                | OTP codes with purpose, expiry, used flag                         |
+| `resumes`             | AES-encrypted resume files with PKI signatures                    |
+| `companies`           | Company pages                                                     |
+| `jobs`                | Job postings                                                      |
+| `applications`        | Applications with status history, recruiter notes, shortlist flag |
+| `messages`            | AES-encrypted + PKI-signed 1-to-1 messages                        |
+| `group_conversations` | Group chat rooms with creator and participants                    |
+| `group_participants`  | Group membership join table                                       |
+| `group_messages`      | AES-encrypted + PKI-signed group messages                         |
+| `e2ee_messages`       | E2EE messages (ciphertext only — server never decrypts)           |
+| `audit_logs`          | SHA-256 hash-chained audit trail                                  |
+| `blockchain_blocks`   | PoW blockchain blocks sealing audit entries                       |
+
+---
+
+## Setting User Roles
+
+```bash
+psql -h localhost -U devuser -d jobportal -W
+```
+
+```sql
+UPDATE users SET role = 'admin' WHERE email = 'admin@example.com';
+UPDATE users SET role = 'recruiter' WHERE email = 'recruiter@example.com';
+```
+
+---
+
+## OTP Simulation
+
+OTPs are printed to the terminal (no email/SMS). Check terminal output after any OTP-triggering action.
 
 ---
 
@@ -625,10 +683,13 @@ ALTER DATABASE jobportal OWNER TO devuser;
 **Port 3000 in use**
 
 ```bash
-sudo lsof -i :3000 && sudo kill -9 <PID>
+sudo lsof -i :3000
+sudo kill -9 <PID>
 ```
 
 **Tables not created** — ensure `synchronize: true` in `app.module.ts`.
+
+**TypeORM `DataTypeNotSupportedError`** — ensure all nullable columns have explicit `type:` in `@Column` decorator.
 
 **PM2 issues**
 

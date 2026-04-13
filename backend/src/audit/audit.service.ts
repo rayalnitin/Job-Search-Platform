@@ -3,17 +3,23 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as crypto from 'crypto';
 import { AuditLog, AuditAction } from './audit-log.entity';
+import { BlockchainBlock } from './blockchain-block.entity';
+
+const BLOCK_DIFFICULTY = 4; // blockHash must start with '0000'
+const DIFFICULTY_PREFIX = '0'.repeat(BLOCK_DIFFICULTY);
 
 @Injectable()
 export class AuditService {
   constructor(
     @InjectRepository(AuditLog)
     private auditRepository: Repository<AuditLog>,
+    @InjectRepository(BlockchainBlock)
+    private blockRepository: Repository<BlockchainBlock>,
   ) {}
 
-  // ── Internal: compute entry hash ─────────────────────────────
-  // Hash input: action|performedBy|targetId|targetType|metadata|createdAt|previousHash
-  // This binds the hash to the entry content AND to the chain position.
+  // ─────────────────────────────────────────────────────────────
+  // EXISTING HASH-CHAIN LOGIC — UNTOUCHED
+  // ─────────────────────────────────────────────────────────────
 
   private computeHash(
     action: string,
@@ -37,8 +43,6 @@ export class AuditService {
     return crypto.createHash('sha256').update(payload).digest('hex');
   }
 
-  // ── Log a new audit entry ─────────────────────────────────────
-
   async log(
     action: AuditAction,
     performedBy: string,
@@ -46,15 +50,12 @@ export class AuditService {
     targetType?: string,
     metadata?: Record<string, any>,
   ) {
-    // Get the most recent log entry to fetch its hash (chain tip)
     const lastEntry = await this.auditRepository.findOne({
       where: {},
       order: { createdAt: 'DESC' },
     });
 
     const previousHash = lastEntry?.entryHash ?? 'GENESIS';
-
-    // We need createdAt before saving — use current time
     const createdAt = new Date();
 
     const entryHash = this.computeHash(
@@ -81,19 +82,11 @@ export class AuditService {
     await this.auditRepository.save(entry);
   }
 
-  // ── Get all logs (admin view) ─────────────────────────────────
-
   async getAllLogs() {
     return this.auditRepository.find({
       order: { createdAt: 'ASC' },
     });
   }
-
-  // ── Verify the entire audit log chain ────────────────────────
-  // Walks every entry in chronological order, recomputes each hash,
-  // and checks that:
-  //   1. entryHash matches the recomputed hash (content not tampered)
-  //   2. previousHash matches the prior entry's entryHash (chain not broken)
 
   async verifyChain(): Promise<{
     valid: boolean;
@@ -117,17 +110,15 @@ export class AuditService {
     let expectedPreviousHash = 'GENESIS';
 
     for (const log of logs) {
-      // Check 1: previousHash must match what we expect from the prior entry
       if (log.previousHash !== expectedPreviousHash) {
         return {
           valid: false,
           totalEntries: logs.length,
           firstTamperedId: log.id,
-          message: `Chain broken at entry ${log.id}. previousHash mismatch — a log entry may have been inserted, deleted, or reordered.`,
+          message: `Chain broken at entry ${log.id}. previousHash mismatch.`,
         };
       }
 
-      // Check 2: recompute entryHash and compare
       const recomputed = this.computeHash(
         log.action,
         log.performedBy ?? '',
@@ -147,7 +138,6 @@ export class AuditService {
         };
       }
 
-      // Advance the chain
       expectedPreviousHash = log.entryHash;
     }
 
@@ -156,6 +146,323 @@ export class AuditService {
       totalEntries: logs.length,
       firstTamperedId: null,
       message: `All ${logs.length} audit log entries verified. Chain is intact.`,
+    };
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // BLOCKCHAIN LOGIC — ADDITIVE
+  // ─────────────────────────────────────────────────────────────
+
+  // ── Compute merkle root from a list of entry hashes ───────────
+  // Simple merkle: SHA-256 of all entry hashes joined with |
+  // Proves the exact ordered set of entries sealed in a block
+
+  private computeMerkleRoot(entryHashes: string[]): string {
+    if (entryHashes.length === 0) return 'EMPTY';
+    const combined = entryHashes.join('|');
+    return crypto.createHash('sha256').update(combined).digest('hex');
+  }
+
+  // ── Compute block hash ────────────────────────────────────────
+  // SHA-256(index|previousHash|merkleRoot|timestamp|nonce)
+
+  private computeBlockHash(
+    index: number,
+    previousHash: string,
+    merkleRoot: string,
+    timestamp: string,
+    nonce: number,
+  ): string {
+    const payload = [
+      index.toString(),
+      previousHash,
+      merkleRoot,
+      timestamp,
+      nonce.toString(),
+    ].join('|');
+
+    return crypto.createHash('sha256').update(payload).digest('hex');
+  }
+
+  // ── Proof of work: mine until hash starts with DIFFICULTY_PREFIX
+
+  private mineBlockHash(
+    index: number,
+    previousHash: string,
+    merkleRoot: string,
+    timestamp: string,
+  ): { blockHash: string; nonce: number } {
+    let nonce = 0;
+    let blockHash = '';
+
+    while (true) {
+      blockHash = this.computeBlockHash(
+        index,
+        previousHash,
+        merkleRoot,
+        timestamp,
+        nonce,
+      );
+
+      if (blockHash.startsWith(DIFFICULTY_PREFIX)) {
+        break;
+      }
+      nonce++;
+    }
+
+    return { blockHash, nonce };
+  }
+
+  // ── Mine a new block ──────────────────────────────────────────
+  // Seals all audit entries not yet included in any block.
+  // Returns error if no unsealed entries exist.
+
+  async mineBlock(): Promise<{
+    message: string;
+    block?: {
+      index: number;
+      blockHash: string;
+      merkleRoot: string;
+      nonce: number;
+      difficulty: number;
+      entryCount: number;
+      timestamp: Date;
+    };
+    error?: string;
+  }> {
+    // Find all audit entries already sealed into blocks
+    const existingBlocks = await this.blockRepository.find();
+    const sealedIds = new Set<string>(
+      existingBlocks.flatMap((b) => b.auditEntryIds),
+    );
+
+    // Get all audit entries not yet sealed
+    const allEntries = await this.auditRepository.find({
+      order: { createdAt: 'ASC' },
+    });
+
+    const unsealedEntries = allEntries.filter((e) => !sealedIds.has(e.id));
+
+    if (unsealedEntries.length === 0) {
+      return {
+        message: 'No new audit entries to seal.',
+        error: 'Nothing to mine. All audit entries are already in a block.',
+      };
+    }
+
+    // Get previous block hash (or GENESIS if first block)
+    const lastBlock = await this.blockRepository.findOne({
+      where: {},
+      order: { index: 'DESC' },
+    });
+
+    const previousHash = lastBlock?.blockHash ?? 'GENESIS';
+    const index = (lastBlock?.index ?? -1) + 1;
+
+    // Compute merkle root from unsealed entry hashes
+    const entryHashes = unsealedEntries.map((e) => e.entryHash);
+    const merkleRoot = this.computeMerkleRoot(entryHashes);
+
+    // Use fixed timestamp string for deterministic hashing
+    const timestamp = new Date().toISOString();
+
+    // Mine: find nonce that produces hash with required leading zeros
+    const { blockHash, nonce } = this.mineBlockHash(
+      index,
+      previousHash,
+      merkleRoot,
+      timestamp,
+    );
+
+    const block = this.blockRepository.create({
+      index,
+      previousHash,
+      blockHash,
+      merkleRoot,
+      auditEntryIds: unsealedEntries.map((e) => e.id),
+      nonce,
+      difficulty: BLOCK_DIFFICULTY,
+    });
+
+    await this.blockRepository.save(block);
+
+    return {
+      message: `Block #${index} mined successfully`,
+      block: {
+        index: block.index,
+        blockHash: block.blockHash,
+        merkleRoot: block.merkleRoot,
+        nonce: block.nonce,
+        difficulty: block.difficulty,
+        entryCount: unsealedEntries.length,
+        timestamp: block.timestamp,
+      },
+    };
+  }
+
+  // ── Get the full blockchain ───────────────────────────────────
+
+  async getBlockchain(): Promise<{
+    totalBlocks: number;
+    unsealedEntryCount: number;
+    blocks: {
+      index: number;
+      blockHash: string;
+      previousHash: string;
+      merkleRoot: string;
+      nonce: number;
+      difficulty: number;
+      entryCount: number;
+      auditEntryIds: string[];
+      timestamp: Date;
+    }[];
+  }> {
+    const blocks = await this.blockRepository.find({
+      order: { index: 'ASC' },
+    });
+
+    // Count unsealed entries
+    const sealedIds = new Set<string>(blocks.flatMap((b) => b.auditEntryIds));
+    const totalEntries = await this.auditRepository.count();
+    const unsealedEntryCount = totalEntries - sealedIds.size;
+
+    return {
+      totalBlocks: blocks.length,
+      unsealedEntryCount,
+      blocks: blocks.map((b) => ({
+        index: b.index,
+        blockHash: b.blockHash,
+        previousHash: b.previousHash,
+        merkleRoot: b.merkleRoot,
+        nonce: b.nonce,
+        difficulty: b.difficulty,
+        entryCount: b.auditEntryIds.length,
+        auditEntryIds: b.auditEntryIds,
+        timestamp: b.timestamp,
+      })),
+    };
+  }
+
+  // ── Verify the entire blockchain ──────────────────────────────
+  // Checks for each block:
+  //   1. index is sequential
+  //   2. previousHash links correctly to prior block
+  //   3. blockHash starts with required difficulty prefix (PoW valid)
+  //   4. blockHash recomputes correctly from stored fields
+  //   5. merkleRoot recomputes correctly from sealed audit entries
+
+  async verifyBlockchain(): Promise<{
+    valid: boolean;
+    totalBlocks: number;
+    firstInvalidBlockIndex: number | null;
+    message: string;
+    details: string[];
+  }> {
+    const blocks = await this.blockRepository.find({
+      order: { index: 'ASC' },
+    });
+
+    if (blocks.length === 0) {
+      return {
+        valid: true,
+        totalBlocks: 0,
+        firstInvalidBlockIndex: null,
+        message:
+          'No blocks found. Mine the first block with POST /admin/blockchain/mine.',
+        details: [],
+      };
+    }
+
+    const details: string[] = [];
+    let expectedPreviousHash = 'GENESIS';
+
+    for (const block of blocks) {
+      // Check 1: sequential index
+      if (block.index !== blocks.indexOf(block)) {
+        return {
+          valid: false,
+          totalBlocks: blocks.length,
+          firstInvalidBlockIndex: block.index,
+          message: `Block index mismatch at block #${block.index}.`,
+          details,
+        };
+      }
+
+      // Check 2: previousHash linkage
+      if (block.previousHash !== expectedPreviousHash) {
+        return {
+          valid: false,
+          totalBlocks: blocks.length,
+          firstInvalidBlockIndex: block.index,
+          message: `Block #${block.index} previousHash mismatch. Chain is broken.`,
+          details,
+        };
+      }
+
+      // Check 3: proof-of-work — hash must start with difficulty zeros
+      if (!block.blockHash.startsWith('0'.repeat(block.difficulty))) {
+        return {
+          valid: false,
+          totalBlocks: blocks.length,
+          firstInvalidBlockIndex: block.index,
+          message: `Block #${block.index} fails proof-of-work. Hash does not meet difficulty.`,
+          details,
+        };
+      }
+
+      // Check 4: recompute merkle root from sealed audit entries
+      const entries = await this.auditRepository.findByIds(block.auditEntryIds);
+
+      // Sort by createdAt to ensure deterministic order
+      entries.sort(
+        (a, b) =>
+          new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+      );
+
+      const entryHashes = entries.map((e) => e.entryHash);
+      const recomputedMerkle = this.computeMerkleRoot(entryHashes);
+
+      if (recomputedMerkle !== block.merkleRoot) {
+        return {
+          valid: false,
+          totalBlocks: blocks.length,
+          firstInvalidBlockIndex: block.index,
+          message: `Block #${block.index} merkle root mismatch. Sealed entries may have been tampered with.`,
+          details,
+        };
+      }
+
+      // Check 5: recompute block hash
+      const recomputedHash = this.computeBlockHash(
+        block.index,
+        block.previousHash,
+        block.merkleRoot,
+        block.timestamp.toISOString(),
+        block.nonce,
+      );
+
+      if (recomputedHash !== block.blockHash) {
+        return {
+          valid: false,
+          totalBlocks: blocks.length,
+          firstInvalidBlockIndex: block.index,
+          message: `Block #${block.index} hash mismatch. Block data has been tampered with.`,
+          details,
+        };
+      }
+
+      details.push(
+        `Block #${block.index} ✓ — ${block.auditEntryIds.length} entries, hash: ${block.blockHash.substring(0, 16)}...`,
+      );
+      expectedPreviousHash = block.blockHash;
+    }
+
+    return {
+      valid: true,
+      totalBlocks: blocks.length,
+      firstInvalidBlockIndex: null,
+      message: `All ${blocks.length} blocks verified. Blockchain is intact.`,
+      details,
     };
   }
 }

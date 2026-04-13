@@ -22,6 +22,7 @@ import { Resume } from './resume/resume.entity';
 import { Company } from './companies/company.entity';
 import { Job } from './companies/job.entity';
 import { AuditLog } from './audit/audit-log.entity';
+import { BlockchainBlock } from './audit/blockchain-block.entity';
 import { Application } from './applications/application.entity';
 import { Message } from './messages/message.entity';
 import { GroupConversation } from './messages/group-conversation.entity';
@@ -32,12 +33,10 @@ import { Connection } from './connections/connection.entity';
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
-
     ThrottlerModule.forRoot([
       { name: 'global', ttl: 60000, limit: 100 },
       { name: 'auth', ttl: 60000, limit: 10 },
     ]),
-
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
       useFactory: (configService: ConfigService) => ({
@@ -56,6 +55,7 @@ import { Connection } from './connections/connection.entity';
           Company,
           Job,
           AuditLog,
+          BlockchainBlock,
           Application,
           Message,
           GroupConversation,
@@ -68,7 +68,6 @@ import { Connection } from './connections/connection.entity';
       }),
       inject: [ConfigService],
     }),
-
     PkiModule,
     UsersModule,
     AuthModule,
