@@ -5,6 +5,7 @@ import {
   Delete,
   Body,
   Param,
+  ParseUUIDPipe,
   UseGuards,
 } from '@nestjs/common';
 import { MessagesService } from './messages.service';
@@ -48,11 +49,6 @@ export class MessagesController {
   @Get()
   getInbox(@GetUser() user: User) {
     return this.messagesService.getInbox(user);
-  }
-
-  @Get(':userId')
-  getConversation(@GetUser() user: User, @Param('userId') userId: string) {
-    return this.messagesService.getConversation(user, userId);
   }
 
   // ── Group messaging (additive) ────────────────────────────────
@@ -130,5 +126,13 @@ export class MessagesController {
   @Get('e2ee/:userId')
   getE2eeConversation(@GetUser() user: User, @Param('userId') userId: string) {
     return this.e2eeMessagesService.getE2eeConversation(user, userId);
+  }
+
+  @Get(':userId')
+  getConversation(
+    @GetUser() user: User,
+    @Param('userId', ParseUUIDPipe) userId: string,
+  ) {
+    return this.messagesService.getConversation(user, userId);
   }
 }

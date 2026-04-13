@@ -3,6 +3,8 @@ import ProtectedRoute from "./components/ProtectedRoute";
 import Login from "./pages/auth/Login";
 import Register from "./pages/auth/Register";
 import VerifyOTP from "./pages/auth/VerifyOTP";
+import LoginOTP from "./pages/auth/LoginOTP";
+import ForgotPassword from "./pages/auth/ForgotPassword";
 import Dashboard from "./pages/user/Dashboard";
 import Profile from "./pages/user/Profile";
 import Resume from "./pages/user/Resume";
@@ -28,8 +30,11 @@ function App() {
         <Route path="/" element={<Login />} />
         <Route path="/register" element={<Register />} />
         <Route path="/verify" element={<VerifyOTP />} />
+        <Route path="/login-otp" element={<LoginOTP />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
         <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+        <Route path="/profile/:id" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
         <Route path="/resume" element={<ProtectedRoute><Resume /></ProtectedRoute>} />
         <Route path="/applications" element={<ProtectedRoute><Applications /></ProtectedRoute>} />
         <Route path="/messages" element={<ProtectedRoute><Messages /></ProtectedRoute>} />
@@ -45,6 +50,7 @@ function App() {
         <Route path="/recruiter/company" element={<ProtectedRoute><RecruiterRoute><CompanyProfile /></RecruiterRoute></ProtectedRoute>} />
         <Route path="/recruiter/jobs" element={<ProtectedRoute><RecruiterRoute><ManageJobs /></RecruiterRoute></ProtectedRoute>} />
         <Route path="/recruiter/messages" element={<ProtectedRoute><RecruiterRoute><Messages /></RecruiterRoute></ProtectedRoute>} />
+        <Route path="/recruiter/network" element={<ProtectedRoute><RecruiterRoute><Networking /></RecruiterRoute></ProtectedRoute>} />
         <Route path="/recruiter/profile" element={<ProtectedRoute><RecruiterRoute><RecruiterProfile /></RecruiterRoute></ProtectedRoute>} />
       </Routes>
     </BrowserRouter>

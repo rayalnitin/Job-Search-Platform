@@ -4,6 +4,7 @@ import Sidebar from "../../components/Sidebar";
 import SearchBar from "../../components/SearchBar";
 import JobCard from "../../components/JobCard";
 import { getJobs } from "../../api/jobs";
+import { getMyApplications } from "../../api/application";
 
 const initialSidebarFilters = {
   fullTime: false,
@@ -32,15 +33,31 @@ const extractMinSalary = (salaryValue) => {
 
 export default function Dashboard() {
   const [jobs, setJobs] = useState([]);
+  const [appliedJobIds, setAppliedJobIds] = useState(new Set());
   const [loading, setLoading] = useState(true);
   const [queryFilters, setQueryFilters] = useState({});
   const [sidebarFilters, setSidebarFilters] = useState(initialSidebarFilters);
 
-  const fetchJobs = async (filters = queryFilters) => {
+  const fetchAppliedJobs = async () => {
+    try {
+      const applicationsRes = await getMyApplications();
+      const nextAppliedIds = new Set(
+        (applicationsRes.data || [])
+          .map((application) => application.job?.id)
+          .filter(Boolean)
+      );
+      setAppliedJobIds(nextAppliedIds);
+    } catch (err) {
+      console.log("Fetch applications error:", err);
+      setAppliedJobIds(new Set());
+    }
+  };
+
+  const fetchJobsData = async (filters = queryFilters) => {
     try {
       setLoading(true);
-      const res = await getJobs(filters);
-      setJobs(res.data);
+      const jobsRes = await getJobs(filters);
+      setJobs(jobsRes.data);
       setQueryFilters(filters);
     } catch (err) {
       console.log("Fetch jobs error:", err);
@@ -51,7 +68,8 @@ export default function Dashboard() {
   };
 
   useEffect(() => {
-    fetchJobs({});
+    fetchJobsData({});
+    fetchAppliedJobs();
   }, []);
 
   const salaryRangeMax = useMemo(() => {
@@ -104,8 +122,13 @@ export default function Dashboard() {
           onResetFilters={() => setSidebarFilters(initialSidebarFilters)}
           salaryRangeMax={salaryRangeMax}
         />
-        <div className="flex-1 md:ml-64 p-6">
-          <SearchBar onSearch={fetchJobs} loading={loading} />
+        <div className="min-w-0 flex-1 p-4 sm:p-6">
+          <SearchBar
+            onSearch={(filters) => {
+              fetchJobsData(filters);
+            }}
+            loading={loading}
+          />
 
           <div className="mt-8 mb-4 flex items-center justify-between gap-4">
             <h2 className="text-xl font-bold">Recommended Jobs</h2>
@@ -124,7 +147,13 @@ export default function Dashboard() {
                 No jobs matched your search. Try changing keyword, location, type, work mode, skill, or sidebar filters.
               </div>
             ) : (
-              filteredJobs.map((job) => <JobCard key={job.id} job={job} />)
+              filteredJobs.map((job) => (
+                <JobCard
+                  key={job.id}
+                  job={job}
+                  applied={appliedJobIds.has(job.id)}
+                />
+              ))
             )}
           </div>
         </div>

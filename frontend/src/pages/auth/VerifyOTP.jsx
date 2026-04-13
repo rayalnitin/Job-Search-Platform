@@ -1,43 +1,69 @@
-import { useState, useRef } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import API from "../../api/axios";
-import { verifyOtp } from "../../api/auth";
+import { resendRegistrationOtp, verifyOtp } from "../../api/auth";
+import OtpVirtualKeyboard from "../../components/OtpVirtualKeyboard";
 
 export default function VerifyOTP() {
   const navigate = useNavigate();
 
-  const [otp, setOtp] = useState(Array(6).fill(""));
-  const inputs = useRef([]);
+  const [otp, setOtp] = useState("");
+  const [message, setMessage] = useState("");
+  const [resending, setResending] = useState(false);
+  const pendingRegistration = (() => {
+    try {
+      return JSON.parse(localStorage.getItem("pendingRegistration") || "null");
+    } catch {
+      return null;
+    }
+  })();
+  const email = pendingRegistration?.email || localStorage.getItem("email");
 
-  const handleChange = (value, index) => {
-    if (!/^[0-9]?$/.test(value)) return;
+  const handleVerify = async () => {
+    if (otp.length !== 6) {
+      setMessage("Enter the 6-digit code using the virtual keypad.");
+      return;
+    }
 
-    const newOtp = [...otp];
-    newOtp[index] = value;
-    setOtp(newOtp);
+    try {
+      if (!pendingRegistration) {
+        setMessage("Registration details not found. Please sign up again.");
+        return;
+      }
 
-    // move to next input
-    if (value && index < 5) {
-      inputs.current[index + 1].focus();
+      setMessage("");
+      await verifyOtp({
+        ...pendingRegistration,
+        code: otp,
+      });
+
+      localStorage.removeItem("pendingRegistration");
+      localStorage.removeItem("email");
+      localStorage.removeItem("selectedRole");
+
+      setMessage("Verification successful.");
+      navigate("/");
+    } catch (err) {
+      console.log("ERROR:", err.response?.data);
+      setMessage(err?.response?.data?.message || "Invalid OTP");
     }
   };
 
-  const handleVerify = async () => {
-    const finalOtp = otp.join("");
-    const email = localStorage.getItem("email");
-    console.log("Sending:", { email, code: finalOtp }); // debug
+  const handleResend = async () => {
+    if (!email) {
+      setMessage("Email not found. Please register again.");
+      return;
+    }
 
     try {
-      await verifyOtp({
-  email,
-  code: finalOtp,
-});
-
-      alert("Verification successful");
-      navigate("/");
-    } catch {
+      setResending(true);
+      setMessage("");
+      const res = await resendRegistrationOtp({ email });
+      setMessage(res?.data?.message || "A new OTP has been sent to your email.");
+    } catch (err) {
       console.log("ERROR:", err.response?.data);
-      alert("Invalid OTP");
+      setMessage(err?.response?.data?.message || "Unable to resend OTP.");
+    } finally {
+      setResending(false);
     }
   };
 
@@ -57,11 +83,11 @@ export default function VerifyOTP() {
           </h2>
 
           <p className="text-gray-600">
-            One more step to secure your professional identity.
+            One more step to complete your sign up.
           </p>
 
           <div className="bg-white p-5 rounded-xl shadow">
-            Enter the 6-digit code sent to your email/mobile.
+            Enter the 6-digit code sent to your email.
           </div>
         </div>
 
@@ -69,36 +95,27 @@ export default function VerifyOTP() {
         <div className="bg-white p-8 rounded-xl shadow-lg relative">
 
           <h2 className="text-2xl font-bold mb-2">
-            Verify your identity
+            Verify your email
           </h2>
 
           <p className="text-gray-500 mb-6 text-sm">
-            Enter the 6-digit code
+            Enter the 6-digit code sent to your email.
           </p>
 
-          {/* OTP BOXES */}
-          <div className="flex justify-between gap-2 mb-6">
-            {otp.map((digit, i) => (
-              <input
-                key={i}
-                ref={(el) => (inputs.current[i] = el)}
-                value={digit}
-                onChange={(e) =>
-                  handleChange(e.target.value, i)
-                }
-                maxLength="1"
-                className="w-12 h-14 text-center text-xl font-bold border rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
-              />
-            ))}
-          </div>
+          {message && (
+            <div className="mb-4 rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-700">
+              {message}
+            </div>
+          )}
 
-          {/* BUTTON */}
-          <button
-            onClick={handleVerify}
-            className="w-full py-3 bg-gradient-to-r from-blue-600 to-blue-800 text-white rounded-xl hover:scale-[1.02] transition"
-          >
-            Confirm Code →
-          </button>
+          <OtpVirtualKeyboard
+            value={otp}
+            onChange={setOtp}
+            title="Verify your email"
+            hint="Use the virtual keypad to enter the 6-digit verification code sent to your email."
+            submitLabel="Confirm Code"
+            onSubmit={handleVerify}
+          />
 
           {/* TIMER */}
           <p className="text-sm text-gray-500 mt-4 text-center">
@@ -107,7 +124,14 @@ export default function VerifyOTP() {
 
           {/* RESEND */}
           <p className="text-sm text-center mt-2 text-gray-400">
-            Resend OTP (soon)
+            <button
+              type="button"
+              onClick={handleResend}
+              disabled={resending}
+              className="font-semibold text-blue-600 hover:text-blue-700 disabled:cursor-not-allowed disabled:text-blue-300"
+            >
+              {resending ? "Resending OTP..." : "Resend OTP"}
+            </button>
           </p>
 
         </div>

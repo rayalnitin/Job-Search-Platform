@@ -47,8 +47,8 @@ export default function Sidebar({
   };
 
   return (
-    <aside className="fixed left-0 top-0 hidden h-full w-64 border-r border-gray-200 bg-gradient-to-b from-white to-gray-50 pt-20 md:block">
-      <div className="space-y-8 p-4">
+    <aside className="sticky top-16 hidden h-[calc(100vh-4rem)] w-64 shrink-0 border-r border-gray-200 bg-gradient-to-b from-white to-gray-50 pt-4 md:block">
+      <div className="flex h-full flex-col overflow-y-auto space-y-8 p-4">
         <section>
           <h2 className="mb-4 text-3xl font-bold tracking-tight text-blue-800">Management</h2>
           <div className="space-y-2 rounded-3xl border border-gray-100 bg-white p-3 shadow-sm">

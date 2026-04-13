@@ -48,6 +48,12 @@ export default function RecruiterSidebar() {
           </p>
         </Link>
 
+        <Link to="/recruiter/network">
+          <p className={`p-2 rounded ${isActive("/recruiter/network")}`}>
+            Networking
+          </p>
+        </Link>
+
         <Link to="/recruiter/profile">
           <p className={`p-2 rounded ${isActive("/recruiter/profile")}`}>
             Recruiter Profile

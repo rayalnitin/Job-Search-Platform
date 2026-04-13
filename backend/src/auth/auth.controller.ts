@@ -7,7 +7,11 @@ import { User } from '../users/user.entity';
 import {
   RegisterDto,
   LoginDto,
+  LoginOtpRequestDto,
+  LoginOtpVerifyDto,
   VerifyOtpDto,
+  CompleteRegistrationDto,
+  ResendRegistrationOtpDto,
   ForgotPasswordDto,
   ResetPasswordDto,
   ConfirmAccountDeletionDto,
@@ -27,8 +31,15 @@ export class AuthController {
   // POST /auth/verify-otp — strict: max 10 per minute
   @Throttle({ auth: { ttl: 60000, limit: 10 } })
   @Post('verify-otp')
-  verifyOtp(@Body() dto: VerifyOtpDto) {
+  verifyOtp(@Body() dto: CompleteRegistrationDto) {
     return this.authService.verifyRegistrationOtp(dto);
+  }
+
+  // POST /auth/resend-registration-otp — strict: max 5 per minute
+  @Throttle({ auth: { ttl: 60000, limit: 5 } })
+  @Post('resend-registration-otp')
+  resendRegistrationOtp(@Body() dto: ResendRegistrationOtpDto) {
+    return this.authService.resendRegistrationOtp(dto);
   }
 
   // POST /auth/login — strict: max 10 per minute (brute force protection)
@@ -36,6 +47,20 @@ export class AuthController {
   @Post('login')
   login(@Body() dto: LoginDto) {
     return this.authService.login(dto);
+  }
+
+  // POST /auth/request-login-otp — strict: max 5 per minute
+  @Throttle({ auth: { ttl: 60000, limit: 5 } })
+  @Post('request-login-otp')
+  requestLoginOtp(@Body() dto: LoginOtpRequestDto) {
+    return this.authService.requestLoginOtp(dto);
+  }
+
+  // POST /auth/verify-login-otp — strict: max 10 per minute
+  @Throttle({ auth: { ttl: 60000, limit: 10 } })
+  @Post('verify-login-otp')
+  verifyLoginOtp(@Body() dto: LoginOtpVerifyDto) {
+    return this.authService.verifyLoginOtp(dto);
   }
 
   // POST /auth/forgot-password — strict: max 5 per minute

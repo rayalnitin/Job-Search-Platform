@@ -11,15 +11,31 @@ export default function RecruiterDashboard() {
   const [loading, setLoading] = useState(true);
   const companyId = localStorage.getItem("companyId");
 
+  const getCurrentUserId = () => {
+    const token = localStorage.getItem("token");
+    if (!token) return null;
+
+    try {
+      return JSON.parse(atob(token.split(".")[1])).sub;
+    } catch {
+      return null;
+    }
+  };
+
+  const currentUserId = getCurrentUserId();
+
   useEffect(() => {
     const fetchDashboard = async () => {
       try {
         const jobsRes = await getJobs();
         const myJobs = companyId
           ? jobsRes.data.filter((job) => job.company?.id === companyId)
-          : [];
+          : currentUserId
+            ? jobsRes.data.filter((job) => job.postedBy?.id === currentUserId)
+            : [];
 
         setJobs(myJobs);
+        setLoading(false);
 
         const applicantPairs = await Promise.all(
           myJobs.map(async (job) => {

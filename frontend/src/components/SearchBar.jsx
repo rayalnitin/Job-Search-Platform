@@ -20,7 +20,9 @@ export default function SearchBar({ onSearch, loading = false }) {
 
   const handleSubmit = () => {
     const cleanedFilters = Object.fromEntries(
-      Object.entries(filters).filter(([, value]) => value.trim() !== "")
+      Object.entries(filters)
+        .map(([key, value]) => [key, value.trim()])
+        .filter(([, value]) => value !== "")
     );
 
     onSearch?.(cleanedFilters);

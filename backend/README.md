@@ -74,6 +74,10 @@ DB_DATABASE=jobportal
 JWT_SECRET=your_jwt_secret_here
 JWT_EXPIRATION=1h
 
+# Email OTP Delivery
+EMAIL_USER=your_gmail_address@example.com
+EMAIL_PASS=your_gmail_app_password
+
 # Encryption (resumes + server-side messages)
 RESUME_ENCRYPTION_KEY=your_32_byte_key_here
 
@@ -151,6 +155,8 @@ keys/
 | POST   | `/auth/register`             | Register new user            | No   | 5/min      |
 | POST   | `/auth/verify-otp`           | Verify email OTP             | No   | 10/min     |
 | POST   | `/auth/login`                | Login, get JWT               | No   | 10/min     |
+| POST   | `/auth/request-login-otp`    | Request login OTP by email   | No   | 5/min      |
+| POST   | `/auth/verify-login-otp`     | Verify login OTP by email    | No   | 10/min     |
 | POST   | `/auth/forgot-password`      | Request password reset OTP   | No   | 5/min      |
 | POST   | `/auth/reset-password`       | Reset password with OTP      | No   | 5/min      |
 | POST   | `/auth/request-deletion-otp` | Request account deletion OTP | Yes  | 3/min      |
@@ -301,7 +307,7 @@ GET /connections/graph
 Download flow:
 
 ```
-1. POST /resume/request-download-otp/:id  → OTP in terminal
+1. POST /resume/request-download-otp/:id  → OTP sent by email
 2. POST /resume/download/:id  { "otpCode": "123456" }
    Headers: X-Integrity-Verified, X-Integrity-Note, X-File-Hash
 ```
@@ -667,7 +673,7 @@ UPDATE users SET role = 'recruiter' WHERE email = 'recruiter@example.com';
 
 ## OTP Simulation
 
-OTPs are printed to the terminal (no email/SMS). Check terminal output after any OTP-triggering action.
+OTPs are delivered by email through Nodemailer using the configured `EMAIL_USER` and `EMAIL_PASS` values. Check the recipient inbox after any OTP-triggering action.
 
 ---
 

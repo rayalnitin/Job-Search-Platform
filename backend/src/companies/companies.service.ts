@@ -149,17 +149,20 @@ export class CompaniesService {
     }
 
     if (query.type) {
-      qb.andWhere('job.type = :type', { type: query.type });
+      qb.andWhere('LOWER(job.type::text) = LOWER(:type)', { type: query.type });
     }
 
     if (query.locationType) {
-      qb.andWhere('job.locationType = :locationType', {
+      qb.andWhere('LOWER(job.locationType::text) = LOWER(:locationType)', {
         locationType: query.locationType,
       });
     }
 
     if (query.skill) {
-      qb.andWhere(':skill = ANY(job.skills)', { skill: query.skill });
+      qb.andWhere(
+        'EXISTS (SELECT 1 FROM unnest(job.skills) AS skill WHERE LOWER(skill) = LOWER(:skill))',
+        { skill: query.skill },
+      );
     }
 
     qb.orderBy('job.createdAt', 'DESC');

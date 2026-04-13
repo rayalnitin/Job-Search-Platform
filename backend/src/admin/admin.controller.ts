@@ -46,4 +46,9 @@ export class AdminController {
   getAuditLogs() {
     return this.adminService.getAuditLogs();
   }
+
+  @Get('logs/verify')
+  verifyAuditLogs() {
+    return this.adminService.verifyAuditLogs();
+  }
 }

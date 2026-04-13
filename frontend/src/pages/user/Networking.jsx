@@ -1,7 +1,8 @@
 ﻿import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import Navbar from "../../components/Navbar";
 import Sidebar from "../../components/Sidebar";
+import RecruiterSidebar from "../../components/recruiter/RecruiterSidebar";
 import {
   acceptConnectionRequest,
   getConnectionGraph,
@@ -33,15 +34,19 @@ const getFriendlyError = (err, fallback) => {
 
 export default function Networking() {
   const navigate = useNavigate();
+  const location = useLocation();
   const initialLoadRef = useRef(false);
   const tabEffectStartedRef = useRef(false);
   const [tab, setTab] = useState("connect");
-  const [receiverId, setReceiverId] = useState("");
+  const [receiverIdentifier, setReceiverIdentifier] = useState("");
   const [connections, setConnections] = useState([]);
   const [requests, setRequests] = useState([]);
   const [graph, setGraph] = useState({ totalConnections: 0, graph: [] });
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
+  const role = localStorage.getItem("role") || "user";
+  const isRecruiter = role === "recruiter" || location.pathname.startsWith("/recruiter/");
+  const messagesPath = isRecruiter ? "/recruiter/messages" : "/messages";
 
   const loadTabData = async (targetTab, { force = false } = {}) => {
     try {
@@ -103,15 +108,15 @@ export default function Networking() {
   );
 
   const handleSendRequest = async () => {
-    if (!receiverId.trim()) {
-      setMessage("Enter a user UUID to send a connection request.");
+    if (!receiverIdentifier.trim()) {
+      setMessage("Enter an email or UUID to send a connection request.");
       return;
     }
 
     try {
-      const res = await sendConnectionRequest(receiverId.trim());
+      const res = await sendConnectionRequest(receiverIdentifier.trim());
       setMessage(res.data.message || "Connection request sent successfully.");
-      setReceiverId("");
+      setReceiverIdentifier("");
     } catch (err) {
       console.log(err);
       setMessage(getFriendlyError(err, "Failed to send request."));
@@ -151,12 +156,22 @@ export default function Networking() {
     <div className="bg-gray-50 min-h-screen">
       <Navbar />
       <div className="flex pt-16">
-        <Sidebar />
-        <div className="flex-1 md:ml-64 px-6 py-8 max-w-7xl">
+        {isRecruiter ? <RecruiterSidebar /> : <Sidebar />}
+        <div
+          className={
+            isRecruiter
+              ? "min-w-0 flex-1 px-4 py-6 sm:px-6 lg:px-8"
+              : "min-w-0 flex-1 px-4 py-6 sm:px-6 lg:px-8"
+          }
+        >
           <div className="rounded-3xl bg-white border border-gray-100 p-6 shadow-sm">
-            <h1 className="text-3xl font-bold text-gray-900">Build Your Network</h1>
+            <h1 className="text-3xl font-bold text-gray-900">
+              {isRecruiter ? "Grow Your Recruiter Network" : "Build Your Network"}
+            </h1>
             <p className="mt-2 text-gray-500">
-              Manage connection requests, accepted connections, and your shared graph. Use your UUID from profile when someone needs to send you a request.
+              {isRecruiter
+                ? "Review incoming connection requests, stay reachable for candidates, and build a trusted recruiter network using email or UUID."
+                : "Manage connection requests, accepted connections, and your shared graph. You can now send a request using either the other person's account email or their UUID."}
             </p>
           </div>
 
@@ -193,14 +208,14 @@ export default function Networking() {
                   <div className="rounded-3xl bg-white p-6 shadow-sm border border-gray-100">
                     <h2 className="text-xl font-semibold text-gray-900">Send Connection Request</h2>
                     <p className="mt-2 text-sm text-gray-500">
-                      Paste the other user's UUID and the backend will create a request if allowed.
+                      Paste the other user's email or UUID and the backend will create a request if allowed.
                     </p>
 
                     <div className="mt-5 flex flex-col gap-3 md:flex-row">
                       <input
-                        value={receiverId}
-                        onChange={(event) => setReceiverId(event.target.value)}
-                        placeholder="Enter receiver UUID"
+                        value={receiverIdentifier}
+                        onChange={(event) => setReceiverIdentifier(event.target.value)}
+                        placeholder="Enter receiver email or UUID"
                         className="flex-1 rounded-2xl border border-gray-200 px-4 py-3 text-sm outline-none focus:border-blue-500"
                       />
                       <button
@@ -220,8 +235,8 @@ export default function Networking() {
                         <p className="mt-1 text-2xl font-bold text-gray-900">{connections.length}</p>
                       </div>
                       <div className="rounded-2xl bg-gray-50 px-4 py-3">
-                        <p className="text-xs uppercase tracking-wide text-gray-400">UUID Sharing</p>
-                        <p className="mt-1 text-sm text-gray-700">Tell people to use your UUID from profile when sending requests.</p>
+                        <p className="text-xs uppercase tracking-wide text-gray-400">How to connect</p>
+                        <p className="mt-1 text-sm text-gray-700">Use email first. UUID from profile is still available as a fallback.</p>
                       </div>
                     </div>
                   </div>
@@ -241,8 +256,14 @@ export default function Networking() {
                         </div>
                         <div className="flex flex-wrap gap-3">
                           <button
+                            onClick={() => navigate(`/profile/${connection.user.id}`)}
+                            className="rounded-xl border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+                          >
+                            View Profile
+                          </button>
+                          <button
                             onClick={() =>
-                              navigate("/messages", {
+                              navigate(messagesPath, {
                                 state: {
                                   selectedUser: {
                                     id: connection.user.id,

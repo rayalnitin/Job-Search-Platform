@@ -1,5 +1,5 @@
 ﻿import { useEffect, useMemo, useRef, useState } from "react";
-import { useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import Navbar from "../../components/Navbar";
 import {
   createGroup,
@@ -43,6 +43,7 @@ const getFriendlyError = (err, fallback) => {
 
 export default function Messages() {
   const location = useLocation();
+  const navigate = useNavigate();
   const currentUser = JSON.parse(localStorage.getItem("user") || "null");
   const currentUserId = currentUser?.id;
   const initialLoadRef = useRef(false);
@@ -113,10 +114,10 @@ export default function Messages() {
       if (mode === "direct") {
         const [directRes, connectionsRes] = await Promise.all([
           getInbox(),
-          getConnections(),
+          ensureConnections(),
         ]);
 
-        const nextConnections = connectionsRes.data || [];
+        const nextConnections = connectionsRes || [];
         const directInbox = (directRes.data || []).map((chat) => ({
           id: chat.partnerId,
           userId: chat.partnerId,
@@ -162,9 +163,9 @@ export default function Messages() {
       if (mode === "group") {
         const [groupRes, connectionsRes] = await Promise.all([
           getGroups(),
-          getConnections(),
+          ensureConnections(),
         ]);
-        const nextConnections = connectionsRes.data || [];
+        const nextConnections = connectionsRes || [];
         const nextGroups = (groupRes.data || []).map((group) => ({
           id: group.id,
           title: group.name,
@@ -186,9 +187,9 @@ export default function Messages() {
 
       const [e2eeRes, connectionsRes] = await Promise.all([
         getE2eeInbox(),
-        getConnections(),
+        ensureConnections(),
       ]);
-      const nextConnections = connectionsRes.data || [];
+      const nextConnections = connectionsRes || [];
       const e2eeInbox = (e2eeRes.data || []).map((chat) => ({
         id: chat.partnerId,
         userId: chat.partnerId,
@@ -289,13 +290,35 @@ export default function Messages() {
         }
 
         const res = await getE2eeConversation(selectedThread.userId || selectedThread.id);
-        const decryptedMessages = await Promise.all(
+        const decryptedMessages = [];
+        let failedDecryptCount = 0;
+
+        const decryptedResults = await Promise.allSettled(
           (res.data || []).map(async (item) => ({
             ...item,
             content: await decryptCiphertext(item.ciphertext, storedKeys.privateKeyPem),
           }))
         );
+
+        decryptedResults.forEach((result) => {
+          if (result.status === "fulfilled") {
+            decryptedMessages.push(result.value);
+            return;
+          }
+
+          failedDecryptCount += 1;
+        });
+
         setMessages(decryptedMessages);
+
+        if (failedDecryptCount > 0) {
+          setMessage(
+            decryptedMessages.length > 0
+              ? "Some encrypted messages could not be decrypted with the current local key."
+              : "This conversation was encrypted with a different local key. Re-registering creates a new key for future messages, but old messages need the previous private key."
+          );
+        }
+        return;
       } catch (err) {
         console.log(err);
         setMessages([]);
@@ -666,6 +689,16 @@ export default function Messages() {
                       ? "E2EE conversations store ciphertext only on the server. Message previews are intentionally hidden in the inbox."
                       : "Server-side encryption and PKI integrity checks are active for this conversation."}
                   </div>
+
+                  {(selectedThread.mode === "direct" || selectedThread.mode === "e2ee") && selectedThread.id && (
+                    <button
+                      type="button"
+                      onClick={() => navigate(`/profile/${selectedThread.id}`)}
+                      className="w-full rounded-2xl border border-gray-200 px-4 py-3 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+                    >
+                      View Profile
+                    </button>
+                  )}
                 </div>
               ) : (
                 <p className="mt-4 text-sm text-gray-400">Choose a thread to inspect its details.</p>

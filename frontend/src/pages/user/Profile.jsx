@@ -1,4 +1,5 @@
 ﻿import { useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 import Navbar from "../../components/Navbar";
 import Sidebar from "../../components/Sidebar";
 import {
@@ -6,6 +7,7 @@ import {
   getAvatarUrl,
   getProfile,
   getProfileViewers,
+  getUserProfileById,
   updateProfile,
   uploadAvatar,
 } from "../../api/user";
@@ -50,6 +52,11 @@ const emptyProfile = {
 };
 
 export default function Profile() {
+  const navigate = useNavigate();
+  const { id: profileId } = useParams();
+  const currentUser = JSON.parse(localStorage.getItem("user") || "null");
+  const currentUserId = currentUser?.id;
+  const isOwnProfile = !profileId || profileId === currentUserId;
   const [edit, setEdit] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -61,13 +68,19 @@ export default function Profile() {
   });
   const fileInputRef = useRef(null);
 
+  const showViewersCard = isOwnProfile;
+
   useEffect(() => {
     const fetchProfile = async () => {
       try {
-        const [profileRes, viewersRes] = await Promise.all([
-          getProfile(),
-          getProfileViewers(),
-        ]);
+        const profileRequest = isOwnProfile && profileId
+          ? getProfile()
+          : isOwnProfile
+            ? getProfile()
+            : getUserProfileById(profileId);
+
+        const profileRes = await profileRequest;
+        const viewersRes = isOwnProfile ? await getProfileViewers() : null;
 
         setProfile({
           id: profileRes.data.id || "",
@@ -92,7 +105,12 @@ export default function Profile() {
             optOutOfViewers: profileRes.data.privacy?.optOutOfViewers || false,
           },
         });
-        setViewers(viewersRes.data);
+        setViewers(
+          viewersRes?.data || {
+            totalUniqueViewers: 0,
+            recentViewers: [],
+          }
+        );
       } catch (err) {
         console.log("Fetch profile error:", err);
         setMessage("Unable to load profile right now.");
@@ -102,7 +120,8 @@ export default function Profile() {
     };
 
     fetchProfile();
-  }, []);
+    setEdit(false);
+  }, [isOwnProfile, profileId]);
 
   const avatarUrl = useMemo(() => {
     if (!profile.id || !profile.hasAvatar) {
@@ -133,6 +152,10 @@ export default function Profile() {
   };
 
   const handleSave = async () => {
+    if (!isOwnProfile) {
+      return;
+    }
+
     try {
       setSaving(true);
       setMessage("");
@@ -146,6 +169,17 @@ export default function Profile() {
         skills: profile.skills,
         ...profile.privacy,
       });
+
+      const storedUser = JSON.parse(localStorage.getItem("user") || "{}");
+      localStorage.setItem(
+        "user",
+        JSON.stringify({
+          ...storedUser,
+          name: profile.name,
+        })
+      );
+      localStorage.setItem("name", profile.name);
+
       setEdit(false);
       setMessage("Profile updated successfully.");
     } catch (err) {
@@ -224,47 +258,88 @@ export default function Profile() {
 
                 <div className="space-y-2">
                   <div>
-                    <h2 className="text-2xl font-bold text-gray-900">{profile.name || "Your Profile"}</h2>
+                    {edit && isOwnProfile ? (
+                      <input
+                        name="name"
+                        value={profile.name}
+                        onChange={handleChange}
+                        className="w-full max-w-md rounded-2xl border border-gray-200 px-4 py-2 text-2xl font-bold text-gray-900 outline-none focus:border-blue-500"
+                        placeholder="Your full name"
+                      />
+                    ) : (
+                      <h2 className="text-2xl font-bold text-gray-900">{profile.name || "Your Profile"}</h2>
+                    )}
                     <p className="mt-1 text-gray-500">{profile.headline || "Add your professional headline"}</p>
                     <p className="mt-1 text-sm text-gray-400">{profile.location || "Location not added"}</p>
                   </div>
 
                   <div className="flex flex-wrap gap-3">
-                    <button
-                      type="button"
-                      onClick={() => fileInputRef.current?.click()}
-                      className="rounded-xl border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
-                    >
-                      {profile.hasAvatar ? "Change Avatar" : "Upload Avatar"}
-                    </button>
-                    {profile.hasAvatar && (
+                    {isOwnProfile ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => fileInputRef.current?.click()}
+                          className="rounded-xl border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+                        >
+                          {profile.hasAvatar ? "Change Avatar" : "Upload Avatar"}
+                        </button>
+                        {profile.hasAvatar && (
+                          <button
+                            type="button"
+                            onClick={handleAvatarDelete}
+                            className="rounded-xl px-4 py-2 text-sm font-semibold text-red-500 hover:bg-red-50"
+                          >
+                            Remove Avatar
+                          </button>
+                        )}
+                      </>
+                    ) : (
                       <button
                         type="button"
-                        onClick={handleAvatarDelete}
-                        className="rounded-xl px-4 py-2 text-sm font-semibold text-red-500 hover:bg-red-50"
+                        onClick={() =>
+                          navigate("/messages", {
+                            state: {
+                              selectedUser: {
+                                id: profile.id,
+                                userId: profile.id,
+                                email: profile.email,
+                                name: profile.name || profile.email,
+                              },
+                            },
+                          })
+                        }
+                        className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
                       >
-                        Remove Avatar
+                        Message
                       </button>
                     )}
                   </div>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/jpeg,image/png,image/webp"
-                    className="hidden"
-                    onChange={handleAvatarUpload}
-                  />
+                  {isOwnProfile && (
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      className="hidden"
+                      onChange={handleAvatarUpload}
+                    />
+                  )}
                 </div>
               </div>
 
               <div className="lg:ml-auto">
-                <button
-                  onClick={edit ? handleSave : () => setEdit(true)}
-                  disabled={saving}
-                  className="rounded-xl bg-blue-600 px-5 py-3 text-white font-semibold hover:bg-blue-700 disabled:opacity-60"
-                >
-                  {edit ? (saving ? "Saving..." : "Save") : "Edit"}
-                </button>
+                {isOwnProfile ? (
+                  <button
+                    onClick={edit ? handleSave : () => setEdit(true)}
+                    disabled={saving}
+                    className="rounded-xl bg-blue-600 px-5 py-3 text-white font-semibold hover:bg-blue-700 disabled:opacity-60"
+                  >
+                    {edit ? (saving ? "Saving..." : "Save") : "Edit"}
+                  </button>
+                ) : (
+                  <div className="rounded-2xl bg-blue-50 px-4 py-3 text-sm text-blue-700">
+                    Viewing this profile counts as a unique view for the owner.
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -414,24 +489,39 @@ export default function Profile() {
                 </div>
               </div>
 
-              <div className="rounded-3xl bg-white p-6 shadow-sm border border-gray-100">
-                <h3 className="font-bold text-gray-900">Profile Viewers</h3>
-                <p className="mt-2 text-3xl font-bold text-blue-700">{viewers.totalUniqueViewers || 0}</p>
-                <p className="mt-1 text-sm text-gray-500">unique viewers</p>
+              {showViewersCard ? (
+                <div className="rounded-3xl bg-white p-6 shadow-sm border border-gray-100">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <h3 className="font-bold text-gray-900">Profile Viewers</h3>
+                      <p className="mt-1 text-sm text-gray-500">Unique visits within the last hour are deduplicated.</p>
+                    </div>
+                    <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">Live</span>
+                  </div>
+                  <p className="mt-4 text-3xl font-bold text-blue-700">{viewers.totalUniqueViewers || 0}</p>
+                  <p className="mt-1 text-sm text-gray-500">unique viewers</p>
 
-                <div className="mt-5 space-y-3">
-                  {viewers.recentViewers?.length ? (
-                    viewers.recentViewers.map((viewer) => (
-                      <div key={`${viewer.viewerId}-${viewer.viewedAt}`} className="rounded-2xl bg-gray-50 px-4 py-3">
-                        <p className="text-sm font-medium text-gray-800 break-all">{viewer.viewerEmail}</p>
-                        <p className="mt-1 text-xs text-gray-500">Viewed {new Date(viewer.viewedAt).toLocaleString()}</p>
-                      </div>
-                    ))
-                  ) : (
-                    <p className="text-sm text-gray-500">No recent viewers yet.</p>
-                  )}
+                  <div className="mt-5 space-y-3">
+                    {viewers.recentViewers?.length ? (
+                      viewers.recentViewers.map((viewer) => (
+                        <div key={`${viewer.viewerId}-${viewer.viewedAt}`} className="rounded-2xl bg-gray-50 px-4 py-3">
+                          <p className="text-sm font-medium text-gray-800 break-all">{viewer.viewerEmail}</p>
+                          <p className="mt-1 text-xs text-gray-500">Viewed {new Date(viewer.viewedAt).toLocaleString()}</p>
+                        </div>
+                      ))
+                    ) : (
+                      <p className="text-sm text-gray-500">No recent viewers yet.</p>
+                    )}
+                  </div>
                 </div>
-              </div>
+              ) : (
+                <div className="rounded-3xl bg-white p-6 shadow-sm border border-gray-100">
+                  <h3 className="font-bold text-gray-900">Profile View</h3>
+                  <p className="mt-2 text-sm text-gray-500">
+                    This open is counted automatically and can be used from messages, networking, or applicant cards.
+                  </p>
+                </div>
+              )}
             </div>
           </div>
         </div>

@@ -22,22 +22,43 @@ export default function Applications() {
   const [resumes, setResumes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
+  const [resumeMessage, setResumeMessage] = useState("");
 
   useEffect(() => {
     const fetchApps = async () => {
       try {
-        const [applicationsRes, resumesRes] = await Promise.all([
+        setMessage("");
+        setResumeMessage("");
+
+        const [applicationsResult, resumesResult] = await Promise.allSettled([
           getMyApplications(),
           getResumes(),
         ]);
 
-        const nextApps = applicationsRes.data || [];
+        if (applicationsResult.status === "rejected") {
+          console.log(applicationsResult.reason);
+          setApps([]);
+          setResumes([]);
+          setMessage("Unable to load your applications right now.");
+
+          if (resumesResult.status === "fulfilled") {
+            setResumes(resumesResult.value.data || []);
+          }
+
+          return;
+        }
+
+        const nextApps = applicationsResult.value.data || [];
         setApps(nextApps);
-        setResumes(resumesRes.data || []);
         setSelectedId((current) => current || nextApps[0]?.id || "");
-      } catch (err) {
-        console.log(err);
-        setMessage("Unable to load your applications right now.");
+
+        if (resumesResult.status === "fulfilled") {
+          setResumes(resumesResult.value.data || []);
+        } else {
+          console.log(resumesResult.reason);
+          setResumes([]);
+          setResumeMessage("Secure Resume Vault could not load right now.");
+        }
       } finally {
         setLoading(false);
       }
@@ -57,7 +78,7 @@ export default function Applications() {
       <Navbar />
       <div className="flex pt-16">
         <Sidebar />
-        <div className="flex-1 md:ml-64 p-8">
+        <div className="min-w-0 flex-1 p-4 sm:p-6 xl:p-8">
           <h1 className="text-3xl font-bold mb-2">My Applications</h1>
           <p className="text-gray-500 mb-8">
             Track your jobs, status updates, and recruiter conversations.
@@ -183,6 +204,11 @@ export default function Applications() {
 
             <div className="col-span-12 xl:col-span-5 space-y-6">
               <Timeline application={selectedApplication} />
+              {resumeMessage && (
+                <div className="rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+                  {resumeMessage}
+                </div>
+              )}
               <ResumeVault
                 application={selectedApplication}
                 resume={selectedResume}

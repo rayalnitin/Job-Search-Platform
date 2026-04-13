@@ -9,35 +9,44 @@ export default function Login() {
     email: "",
     password: "",
   });
+  const [message, setMessage] = useState("");
 
   const handleChange = (e) => {
     setForm({ ...form, [e.target.name]: e.target.value });
   };
 
   const handleLogin = async () => {
-  try {
-    const res = await loginUser(form);
-    console.log("LOGIN RESPONSE:", res.data); // 🔥 debug
+    try {
+      setMessage("");
+      const res = await loginUser(form);
+      console.log("LOGIN RESPONSE:", res.data); // debug
 
-    localStorage.setItem("token", res.data.accessToken);
-    localStorage.setItem("role", res.data.user.role);
-    localStorage.setItem("user", JSON.stringify(res.data.user));
+      localStorage.setItem("token", res.data.accessToken);
+      localStorage.setItem("role", res.data.user.role);
+      localStorage.setItem("user", JSON.stringify(res.data.user));
 
-    const role = res.data.user.role;
+      const role = res.data.user.role;
 
-    if (role === "admin") {
-      navigate("/admin");
-    } else if (role === "recruiter") {
-      navigate("/recruiter/dashboard");
-    } else {
-      navigate("/dashboard");
+      if (role === "admin") {
+        navigate("/admin");
+      } else if (role === "recruiter") {
+        navigate("/recruiter/dashboard");
+      } else {
+        navigate("/dashboard");
+      }
+    } catch (err) {
+      console.log(err);
+      setMessage(err?.response?.data?.message || "Login failed");
+    }
+  };
+
+  const handleLoginWithOtp = () => {
+    if (form.email.trim()) {
+      localStorage.setItem("pendingLoginEmail", form.email.trim());
     }
 
-  } catch (err) {
-    console.log(err);
-    alert("Login failed");
-  }
-};
+    navigate("/login-otp");
+  };
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 relative overflow-hidden">
@@ -83,10 +92,16 @@ export default function Login() {
               Enter your credentials to continue
             </p>
 
-            {/* Email / Mobile */}
+            {message && (
+              <div className="mb-4 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">
+                {message}
+              </div>
+            )}
+
+            {/* Email */}
             <input
               name="email"
-              placeholder="Email or Mobile"
+              placeholder="Email"
               onChange={handleChange}
               className="w-full p-3 mb-4 border rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
             />
@@ -99,6 +114,17 @@ export default function Login() {
               onChange={handleChange}
               className="w-full p-3 mb-4 border rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
             />
+
+            <div className="mb-4 flex items-center justify-between text-sm">
+              <span className="text-gray-500">Forgot your password?</span>
+              <button
+                type="button"
+                onClick={() => navigate("/forgot-password")}
+                className="font-semibold text-blue-600 hover:text-blue-700"
+              >
+                Reset password
+              </button>
+            </div>
 
             {/* Remember */}
             <div className="flex items-center gap-2 mb-4">
@@ -115,7 +141,11 @@ export default function Login() {
             </button>
 
             {/* OTP Login */}
-            <button className="w-full mt-3 py-3 border rounded-xl">
+            <button
+              type="button"
+              onClick={handleLoginWithOtp}
+              className="w-full mt-3 py-3 border rounded-xl border-blue-200 text-blue-700 hover:bg-blue-50"
+            >
               Login with OTP
             </button>
 

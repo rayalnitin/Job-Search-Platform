@@ -13,14 +13,30 @@ export default function ManageJobs() {
   const [loading, setLoading] = useState(true);
   const companyId = localStorage.getItem("companyId");
 
+  const getCurrentUserId = () => {
+    const token = localStorage.getItem("token");
+    if (!token) return null;
+
+    try {
+      return JSON.parse(atob(token.split(".")[1])).sub;
+    } catch {
+      return null;
+    }
+  };
+
+  const currentUserId = getCurrentUserId();
+
   const fetchJobs = async () => {
     try {
       setLoading(true);
       const res = await getJobs();
       const myJobs = companyId
         ? res.data.filter((job) => job.company?.id === companyId)
-        : [];
+        : currentUserId
+          ? res.data.filter((job) => job.postedBy?.id === currentUserId)
+          : [];
       setJobs(myJobs);
+      setLoading(false);
 
       const applicantPairs = await Promise.all(
         myJobs.map(async (job) => {

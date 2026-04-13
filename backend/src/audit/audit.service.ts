@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
+import { DataSource, Repository } from 'typeorm';
 import * as crypto from 'crypto';
 import { AuditLog, AuditAction } from './audit-log.entity';
 import { BlockchainBlock } from './blockchain-block.entity';
@@ -11,6 +11,8 @@ const DIFFICULTY_PREFIX = '0'.repeat(BLOCK_DIFFICULTY);
 @Injectable()
 export class AuditService {
   constructor(
+    @InjectDataSource()
+    private dataSource: DataSource,
     @InjectRepository(AuditLog)
     private auditRepository: Repository<AuditLog>,
     @InjectRepository(BlockchainBlock)
@@ -50,36 +52,42 @@ export class AuditService {
     targetType?: string,
     metadata?: Record<string, any>,
   ) {
-    const lastEntry = await this.auditRepository.findOne({
-      where: {},
-      order: { createdAt: 'DESC' },
+    await this.dataSource.transaction(async (manager) => {
+      const auditRepository = manager.getRepository(AuditLog);
+
+      const lastEntry = await auditRepository
+        .createQueryBuilder('log')
+        .orderBy('log.createdAt', 'DESC')
+        .addOrderBy('log.id', 'DESC')
+        .setLock('pessimistic_write')
+        .getOne();
+
+      const previousHash = lastEntry?.entryHash ?? 'GENESIS';
+      const createdAt = new Date();
+
+      const entryHash = this.computeHash(
+        action,
+        performedBy ?? '',
+        targetId ?? '',
+        targetType ?? '',
+        metadata ?? {},
+        createdAt,
+        previousHash,
+      );
+
+      const entry = auditRepository.create({
+        action,
+        performedBy,
+        targetId,
+        targetType,
+        metadata,
+        previousHash,
+        entryHash,
+        createdAt,
+      });
+
+      await auditRepository.save(entry);
     });
-
-    const previousHash = lastEntry?.entryHash ?? 'GENESIS';
-    const createdAt = new Date();
-
-    const entryHash = this.computeHash(
-      action,
-      performedBy ?? '',
-      targetId ?? '',
-      targetType ?? '',
-      metadata ?? {},
-      createdAt,
-      previousHash,
-    );
-
-    const entry = this.auditRepository.create({
-      action,
-      performedBy,
-      targetId,
-      targetType,
-      metadata,
-      previousHash,
-      entryHash,
-      createdAt,
-    });
-
-    await this.auditRepository.save(entry);
   }
 
   async getAllLogs() {
@@ -95,7 +103,7 @@ export class AuditService {
     message: string;
   }> {
     const logs = await this.auditRepository.find({
-      order: { createdAt: 'ASC' },
+      order: { createdAt: 'ASC', id: 'ASC' },
     });
 
     if (logs.length === 0) {
@@ -264,14 +272,14 @@ export class AuditService {
     const merkleRoot = this.computeMerkleRoot(entryHashes);
 
     // Use fixed timestamp string for deterministic hashing
-    const timestamp = new Date().toISOString();
+    const timestamp = new Date();
 
     // Mine: find nonce that produces hash with required leading zeros
     const { blockHash, nonce } = this.mineBlockHash(
       index,
       previousHash,
       merkleRoot,
-      timestamp,
+      timestamp.toISOString(),
     );
 
     const block = this.blockRepository.create({
@@ -282,6 +290,7 @@ export class AuditService {
       auditEntryIds: unsealedEntries.map((e) => e.id),
       nonce,
       difficulty: BLOCK_DIFFICULTY,
+      timestamp,
     });
 
     await this.blockRepository.save(block);
@@ -295,7 +304,7 @@ export class AuditService {
         nonce: block.nonce,
         difficulty: block.difficulty,
         entryCount: unsealedEntries.length,
-        timestamp: block.timestamp,
+        timestamp,
       },
     };
   }
@@ -314,7 +323,7 @@ export class AuditService {
       difficulty: number;
       entryCount: number;
       auditEntryIds: string[];
-      timestamp: Date;
+      timestamp: Date | null;
     }[];
   }> {
     const blocks = await this.blockRepository.find({
@@ -378,7 +387,7 @@ export class AuditService {
 
     for (const block of blocks) {
       // Check 1: sequential index
-      if (block.index !== blocks.indexOf(block)) {
+      if (block.index !== details.length) {
         return {
           valid: false,
           totalBlocks: blocks.length,
@@ -412,6 +421,16 @@ export class AuditService {
 
       // Check 4: recompute merkle root from sealed audit entries
       const entries = await this.auditRepository.findByIds(block.auditEntryIds);
+
+      if (!block.timestamp) {
+        return {
+          valid: false,
+          totalBlocks: blocks.length,
+          firstInvalidBlockIndex: block.index,
+          message: `Block #${block.index} is missing a timestamp. Run Repair Ledger to rebuild the chain.`,
+          details,
+        };
+      }
 
       // Sort by createdAt to ensure deterministic order
       entries.sort(
@@ -463,6 +482,69 @@ export class AuditService {
       firstInvalidBlockIndex: null,
       message: `All ${blocks.length} blocks verified. Blockchain is intact.`,
       details,
+    };
+  }
+
+  // ── Repair the full ledger ───────────────────────────────────
+  // Rebuilds audit hash-chain, clears blockchain blocks, and remints blocks.
+
+  async repairLedger(): Promise<{
+    message: string;
+    auditEntriesRepaired: number;
+    blockchainRebuilt: boolean;
+    blockchain?: {
+      totalBlocks: number;
+      unsealedEntryCount: number;
+      blocks: {
+        index: number;
+        blockHash: string;
+        previousHash: string;
+        merkleRoot: string;
+        nonce: number;
+        difficulty: number;
+        entryCount: number;
+        auditEntryIds: string[];
+        timestamp: Date | null;
+      }[];
+    };
+  }> {
+    const logs = await this.auditRepository.find({
+      order: { createdAt: 'ASC', id: 'ASC' },
+    });
+
+    let previousHash = 'GENESIS';
+
+    await this.dataSource.transaction(async (manager) => {
+      const auditRepository = manager.getRepository(AuditLog);
+
+      for (const log of logs) {
+        log.previousHash = previousHash;
+        log.entryHash = this.computeHash(
+          log.action,
+          log.performedBy ?? '',
+          log.targetId ?? '',
+          log.targetType ?? '',
+          log.metadata ?? {},
+          log.createdAt,
+          previousHash,
+        );
+
+        await auditRepository.save(log);
+        previousHash = log.entryHash;
+      }
+    });
+
+    await this.blockRepository.clear();
+
+    const mined = await this.mineBlock();
+
+    return {
+      message: 'Ledger repaired and blockchain rebuilt successfully.',
+      auditEntriesRepaired: logs.length,
+      blockchainRebuilt: true,
+      blockchain: mined.block
+        ? await this.getBlockchain()
+        : await this.getBlockchain(),
     };
   }
 }

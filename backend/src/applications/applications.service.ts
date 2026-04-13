@@ -5,9 +5,10 @@ import {
   ConflictException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { Application, ApplicationStatus } from './application.entity';
 import { User, UserRole } from '../users/user.entity';
+import { Profile } from '../users/profile.entity';
 import { Job } from '../companies/job.entity';
 import { Resume } from '../resume/resume.entity';
 import {
@@ -27,6 +28,8 @@ export class ApplicationsService {
     private jobRepository: Repository<Job>,
     @InjectRepository(Resume)
     private resumeRepository: Repository<Resume>,
+    @InjectRepository(Profile)
+    private profileRepository: Repository<Profile>,
     private auditService: AuditService,
   ) {}
 
@@ -102,6 +105,19 @@ export class ApplicationsService {
       order: { appliedAt: 'DESC' },
     });
 
+    const recruiterIds = Array.from(
+      new Set(applications.map((application) => application.job.postedBy?.id).filter(Boolean)),
+    );
+    const recruiterProfiles = recruiterIds.length
+      ? await this.profileRepository.find({
+          where: { user: { id: In(recruiterIds) } },
+          relations: ['user'],
+        })
+      : [];
+    const recruiterNameMap = new Map(
+      recruiterProfiles.map((profile) => [profile.user.id, profile.name || profile.user.email]),
+    );
+
     return applications.map((app) => ({
       id: app.id,
       job: {
@@ -113,6 +129,7 @@ export class ApplicationsService {
         ? {
             id: app.job.postedBy.id,
             email: app.job.postedBy.email,
+            name: recruiterNameMap.get(app.job.postedBy.id) || app.job.postedBy.email,
           }
         : null,
       status: app.status,
@@ -194,11 +211,25 @@ export class ApplicationsService {
       order: { appliedAt: 'DESC' },
     });
 
+    const applicantIds = Array.from(
+      new Set(applications.map((application) => application.applicant.id)),
+    );
+    const applicantProfiles = applicantIds.length
+      ? await this.profileRepository.find({
+          where: { user: { id: In(applicantIds) } },
+          relations: ['user'],
+        })
+      : [];
+    const applicantNameMap = new Map(
+      applicantProfiles.map((profile) => [profile.user.id, profile.name || profile.user.email]),
+    );
+
     return applications.map((app) => ({
       id: app.id,
       applicant: {
         id: app.applicant.id,
         email: app.applicant.email,
+        name: applicantNameMap.get(app.applicant.id) || app.applicant.email,
       },
       status: app.status,
       statusHistory: app.statusHistory,

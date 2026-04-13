@@ -40,7 +40,8 @@ export class UsersService {
     if (!profile) throw new NotFoundException('Profile not found');
 
     return {
-      id: profile.id,
+      id: profile.user.id,
+      profileId: profile.id,
       email: profile.user.email,
       phone: profile.user.phone,
       role: profile.user.role,
@@ -97,7 +98,8 @@ export class UsersService {
     };
 
     return {
-      id: profile.id,
+      id: profile.user.id,
+      profileId: profile.id,
       email: profile.user.email,
       role: profile.user.role,
       name: profile.name,
@@ -218,7 +220,7 @@ export class UsersService {
       .leftJoinAndSelect('pv.viewer', 'viewer')
       .leftJoin('profiles', 'vp', 'vp.user_id = viewer.id')
       .where('pv.target_id = :id', { id: user.id })
-      .andWhere('vp.opt_out_of_viewers = false')
+      .andWhere('vp."optOutOfViewers" = false')
       .orderBy('pv.viewedAt', 'DESC')
       .getMany();
 

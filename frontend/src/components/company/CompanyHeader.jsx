@@ -1,4 +1,9 @@
 export default function CompanyHeader({ company }) {
+  const ownerName = company.createdBy?.name || company.createdBy?.email || "Recruiter";
+  const lastUpdated = company.updatedAt
+    ? new Date(company.updatedAt).toLocaleDateString()
+    : null;
+
   return (
     <div className="relative">
       <div className="h-60 rounded-3xl bg-gradient-to-r from-blue-100 via-indigo-50 to-slate-100" />
@@ -12,6 +17,16 @@ export default function CompanyHeader({ company }) {
           <p className="text-gray-500 mt-1">
             {company.location || "Location"} - {company.website || "Company profile"}
           </p>
+          <div className="mt-3 flex flex-wrap gap-2 text-xs font-medium text-gray-600">
+            <span className="rounded-full bg-white px-3 py-1 shadow-sm border border-gray-100">
+              Managed by {ownerName}
+            </span>
+            {lastUpdated && (
+              <span className="rounded-full bg-white px-3 py-1 shadow-sm border border-gray-100">
+                Updated {lastUpdated}
+              </span>
+            )}
+          </div>
         </div>
       </div>
     </div>

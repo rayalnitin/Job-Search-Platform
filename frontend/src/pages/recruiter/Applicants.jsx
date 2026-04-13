@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import Navbar from "../../components/Navbar";
 import RecruiterSidebar from "../../components/recruiter/RecruiterSidebar";
+import { getJobs } from "../../api/jobs";
 import {
   getApplicantsForJob,
   updateApplicationStatus,
@@ -18,36 +19,105 @@ const statusStyles = {
 export default function Applicants() {
   const navigate = useNavigate();
   const { jobId } = useParams();
-  const [applicants, setApplicants] = useState([]);
+  const [jobs, setJobs] = useState([]);
+  const [applicantsByJob, setApplicantsByJob] = useState({});
+  const [selectedJobId, setSelectedJobId] = useState(jobId || "all");
   const [loading, setLoading] = useState(true);
+  const [message, setMessage] = useState("");
+
+  const companyId = localStorage.getItem("companyId");
+
+  const getCurrentUserId = () => {
+    const token = localStorage.getItem("token");
+    if (!token) return null;
+
+    try {
+      return JSON.parse(atob(token.split(".")[1])).sub;
+    } catch {
+      return null;
+    }
+  };
+
+  const currentUserId = getCurrentUserId();
 
   useEffect(() => {
     const fetchApplicants = async () => {
-      if (!jobId) {
-        setApplicants([]);
-        setLoading(false);
-        return;
-      }
-
       try {
-        const res = await getApplicantsForJob(jobId);
-        setApplicants(res.data);
+        setLoading(true);
+        setMessage("");
+
+        const jobsRes = await getJobs();
+        const myJobs = jobsRes.data.filter((job) => {
+          if (companyId && companyId !== "undefined") {
+            return job.company?.id === companyId;
+          }
+
+          return currentUserId ? job.postedBy?.id === currentUserId : false;
+        });
+
+        setJobs(myJobs);
+
+        const applicantPairs = await Promise.all(
+          myJobs.map(async (job) => {
+            try {
+              const res = await getApplicantsForJob(job.id);
+              return [job.id, res.data || []];
+            } catch (err) {
+              return [job.id, []];
+            }
+          })
+        );
+
+        setApplicantsByJob(Object.fromEntries(applicantPairs));
+
+        if (jobId) {
+          setSelectedJobId(jobId);
+        } else {
+          setSelectedJobId("all");
+        }
       } catch (err) {
         console.log("Fetch applicants error:", err);
+        setMessage("Unable to load applicants right now.");
       } finally {
         setLoading(false);
       }
     };
 
     fetchApplicants();
-  }, [jobId]);
+  }, [jobId, companyId, currentUserId]);
+
+  const visibleApplicants = useMemo(() => {
+    const targetJobIds = selectedJobId === "all" ? jobs.map((job) => job.id) : [selectedJobId];
+
+    return targetJobIds
+      .flatMap((targetJobId) => {
+        const job = jobs.find((item) => item.id === targetJobId);
+        return (applicantsByJob[targetJobId] || []).map((app) => ({
+          ...app,
+          jobId: targetJobId,
+          jobTitle: job?.title || "Job",
+        }));
+      })
+      .sort((left, right) => new Date(right.appliedAt) - new Date(left.appliedAt));
+  }, [applicantsByJob, jobs, selectedJobId]);
+
+  const selectedJobTitle = useMemo(() => {
+    if (selectedJobId === "all") {
+      return "All Applicants";
+    }
+
+    return jobs.find((job) => job.id === selectedJobId)?.title || "Applicants";
+  }, [jobs, selectedJobId]);
 
   const handleStatusChange = async (id, newStatus) => {
     try {
       await updateApplicationStatus(id, newStatus);
-      setApplicants((prev) =>
-        prev.map((app) =>
-          app.id === id ? { ...app, status: newStatus } : app
+      setApplicantsByJob((prev) =>
+        Object.fromEntries(
+          Object.entries(prev).map(([key, value]) => [
+            key,
+            value.map((app) => (app.id === id ? { ...app, status: newStatus } : app)),
+          ])
         )
       );
     } catch (err) {
@@ -60,31 +130,63 @@ export default function Applicants() {
       <Navbar />
       <div className="pt-20 flex">
         <RecruiterSidebar />
-        <div className="flex-1 p-8">
+        <div className="flex-1 px-6 py-8">
           <div className="mb-8">
             <h1 className="text-3xl font-bold">Review Applicants</h1>
             <p className="text-gray-500">
-              {jobId
-                ? "Manage candidate status and continue the conversation from one place."
-                : "Open a job from Manage Jobs to see its applicants."}
+              Manage candidate status and continue the conversation from one place.
             </p>
           </div>
 
-          {!jobId ? (
-            <div className="rounded-2xl border border-gray-100 bg-white p-6 text-sm text-gray-500 shadow-sm">
-              Choose a job from Manage Jobs to load applicants for that posting.
+          {message && (
+            <div className="mb-6 rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-700">
+              {message}
             </div>
-          ) : loading ? (
+          )}
+
+          <div className="mb-6 flex flex-wrap gap-3 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
+            <button
+              type="button"
+              onClick={() => setSelectedJobId("all")}
+              className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
+                selectedJobId === "all"
+                  ? "bg-blue-600 text-white"
+                  : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+              }`}
+            >
+              All Jobs
+            </button>
+            {jobs.map((job) => (
+              <button
+                key={job.id}
+                type="button"
+                onClick={() => setSelectedJobId(job.id)}
+                className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
+                  selectedJobId === job.id
+                    ? "bg-blue-600 text-white"
+                    : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                }`}
+              >
+                {job.title}
+              </button>
+            ))}
+          </div>
+
+          {loading ? (
             <div className="rounded-2xl border border-gray-100 bg-white p-6 text-sm text-gray-500 shadow-sm">
               Loading applicants...
             </div>
-          ) : applicants.length === 0 ? (
+          ) : visibleApplicants.length === 0 ? (
             <div className="rounded-2xl border border-gray-100 bg-white p-6 text-sm text-gray-500 shadow-sm">
-              No applicants found for this job yet.
+              No applicants found for {selectedJobId === "all" ? "your jobs yet" : "this job yet"}.
             </div>
           ) : (
             <div className="space-y-6">
-              {applicants.map((app) => {
+              <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm text-sm text-gray-500">
+                Showing {visibleApplicants.length} applicant{visibleApplicants.length === 1 ? "" : "s"} for {selectedJobTitle}.
+              </div>
+
+              {visibleApplicants.map((app) => {
                 const latestHistory = app.statusHistory?.[app.statusHistory.length - 1];
 
                 return (
@@ -96,8 +198,11 @@ export default function Applicants() {
                       <div className="flex-1">
                         <div className="flex flex-wrap items-center gap-3">
                           <h3 className="font-bold text-lg text-gray-900">
-                            {app.applicant?.email || "Applicant"}
+                            {app.applicant?.name || app.applicant?.email || "Applicant"}
                           </h3>
+                          <p className="text-sm text-gray-500 break-all">
+                            {app.applicant?.email || "No email available"}
+                          </p>
                           <span
                             className={`rounded-full px-3 py-1 text-xs font-semibold capitalize ${
                               statusStyles[app.status] || "bg-gray-100 text-gray-700"
@@ -158,7 +263,7 @@ export default function Applicants() {
                               state: {
                                 selectedUser: {
                                   id: app.applicant?.id,
-                                  name: app.applicant?.email,
+                                  name: app.applicant?.name || app.applicant?.email,
                                   email: app.applicant?.email,
                                 },
                               },
@@ -167,6 +272,13 @@ export default function Applicants() {
                           className="rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700"
                         >
                           Message Applicant
+                        </button>
+
+                        <button
+                          onClick={() => navigate(`/profile/${app.applicant?.id}`)}
+                          className="rounded-xl border border-gray-200 px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+                        >
+                          View Profile
                         </button>
 
                         <div className="rounded-xl bg-gray-50 px-4 py-3 text-xs text-gray-500">

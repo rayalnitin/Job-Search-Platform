@@ -1,6 +1,6 @@
 ﻿import { useNavigate } from "react-router-dom";
 
-export default function AdminHeader() {
+export default function AdminHeader({ lastUpdatedAt, live = false }) {
   const navigate = useNavigate();
   const user = JSON.parse(localStorage.getItem("user") || "{}");
 
@@ -19,6 +19,15 @@ export default function AdminHeader() {
       </div>
 
       <div className="flex items-center gap-4">
+        <div className="hidden rounded-full border border-emerald-100 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 sm:block">
+          {live ? "Live updates on" : "Live updates off"}
+        </div>
+        <div className="hidden text-right sm:block">
+          <p className="text-xs uppercase tracking-wide text-slate-400">Last refreshed</p>
+          <p className="text-sm font-semibold text-slate-700">
+            {lastUpdatedAt ? lastUpdatedAt.toLocaleTimeString() : "Waiting"}
+          </p>
+        </div>
         <div className="text-right">
           <p className="text-sm font-semibold text-slate-800">{user.email || "Admin"}</p>
           <p className="text-xs text-slate-500">Platform administrator</p>

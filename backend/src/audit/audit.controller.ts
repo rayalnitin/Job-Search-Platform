@@ -47,4 +47,11 @@ export class AuditController {
   async verifyBlockchain() {
     return this.auditService.verifyBlockchain();
   }
+
+  // POST /admin/blockchain/repair
+  // Rebuilds the audit chain and blockchain from the current audit entries
+  @Post('blockchain/repair')
+  async repairLedger() {
+    return this.auditService.repairLedger();
+  }
 }

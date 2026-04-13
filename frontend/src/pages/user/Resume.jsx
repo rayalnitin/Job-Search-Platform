@@ -1,6 +1,7 @@
 ﻿import { useEffect, useState } from "react";
 import Navbar from "../../components/Navbar";
 import Sidebar from "../../components/Sidebar";
+import OtpVirtualKeyboard from "../../components/OtpVirtualKeyboard";
 import {
   deleteResume,
   downloadResume,
@@ -16,6 +17,8 @@ export default function Resume() {
   const [uploading, setUploading] = useState(false);
   const [message, setMessage] = useState("");
   const [otpInputs, setOtpInputs] = useState({});
+  const [otpRequested, setOtpRequested] = useState({});
+  const [downloadUnlocked, setDownloadUnlocked] = useState({});
 
   const fetchResumes = async () => {
     try {
@@ -81,7 +84,10 @@ export default function Resume() {
   const handleRequestOtp = async (id) => {
     try {
       await requestResumeDownloadOtp(id);
-      setMessage("OTP generated. Check the backend terminal and enter it below.");
+      setOtpRequested((prev) => ({ ...prev, [id]: true }));
+      setDownloadUnlocked((prev) => ({ ...prev, [id]: false }));
+      setOtpInputs((prev) => ({ ...prev, [id]: "" }));
+      setMessage("OTP sent to your email. Enter it with the virtual keypad below.");
     } catch (err) {
       console.log("Request OTP error:", err);
       setMessage(err?.response?.data?.message || "Failed to request download OTP.");
@@ -110,7 +116,9 @@ export default function Resume() {
       setMessage(
         res.headers["x-integrity-note"] || "Resume downloaded successfully."
       );
+      setDownloadUnlocked((prev) => ({ ...prev, [resume.id]: true }));
       setOtpInputs((prev) => ({ ...prev, [resume.id]: "" }));
+      setOtpRequested((prev) => ({ ...prev, [resume.id]: false }));
     } catch (err) {
       console.log("Download resume error:", err);
       setMessage(err?.response?.data?.message || "Failed to download resume.");
@@ -183,19 +191,30 @@ export default function Resume() {
                   <div className="mt-5 space-y-3">
                     <button
                       onClick={() => handleRequestOtp(resume.id)}
-                      className="w-full rounded-xl border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+                      className="w-full rounded-xl border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-700 hover:border-blue-200 hover:bg-blue-50"
                     >
-                      Request Download OTP
+                      {otpRequested[resume.id] ? "Resend Download OTP" : "Request Download OTP"}
                     </button>
 
-                    <input
-                      value={otpInputs[resume.id] || ""}
-                      onChange={(event) =>
-                        setOtpInputs((prev) => ({ ...prev, [resume.id]: event.target.value }))
-                      }
-                      placeholder="Enter OTP from backend terminal"
-                      className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm outline-none focus:border-blue-500"
-                    />
+                    {otpRequested[resume.id] && !downloadUnlocked[resume.id] && (
+                      <OtpVirtualKeyboard
+                        value={otpInputs[resume.id] || ""}
+                        onChange={(code) =>
+                          setOtpInputs((prev) => ({ ...prev, [resume.id]: code }))
+                        }
+                        length={6}
+                        title="Resume download OTP"
+                        hint="Use the virtual keypad to enter the 6-digit code sent to your email."
+                        submitLabel="Download Resume"
+                        onSubmit={() => handleDownload(resume)}
+                      />
+                    )}
+
+                    {downloadUnlocked[resume.id] && (
+                      <div className="rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-700">
+                        OTP verified. Resume downloaded securely.
+                      </div>
+                    )}
                   </div>
 
                   <div className="mt-5 flex flex-wrap gap-3">
@@ -204,7 +223,15 @@ export default function Resume() {
                         Set Active
                       </button>
                     )}
-                    <button onClick={() => handleDownload(resume)} className="rounded-xl border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+                    <button
+                      onClick={() => handleDownload(resume)}
+                      disabled={!otpInputs[resume.id] || otpInputs[resume.id].trim().length !== 6}
+                      className={`rounded-xl px-4 py-2 text-sm font-semibold transition ${
+                        otpInputs[resume.id] && otpInputs[resume.id].trim().length === 6
+                          ? "bg-blue-600 text-white hover:bg-blue-700"
+                          : "cursor-not-allowed border border-gray-200 bg-gray-100 text-gray-400"
+                      }`}
+                    >
                       Download
                     </button>
                     <button onClick={() => handleDelete(resume.id)} className="rounded-xl px-4 py-2 text-sm font-semibold text-red-500 hover:bg-red-50">

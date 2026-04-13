@@ -23,21 +23,36 @@ export class ConnectionsService {
   // ── Send a connection request ─────────────────────────────────
 
   async sendRequest(requester: User, dto: SendConnectionRequestDto) {
-    if (requester.id === dto.receiverId) {
-      throw new BadRequestException('You cannot connect with yourself');
+    if (!dto.receiverId && !dto.receiverEmail) {
+      throw new BadRequestException(
+        'Provide either receiverId or receiverEmail',
+      );
     }
 
-    const receiver = await this.userRepository.findOne({
-      where: { id: dto.receiverId },
-    });
+    let receiver: User | null = null;
+
+    if (dto.receiverId) {
+      receiver = await this.userRepository.findOne({
+        where: { id: dto.receiverId },
+      });
+    } else if (dto.receiverEmail) {
+      receiver = await this.userRepository.findOne({
+        where: { email: dto.receiverEmail.toLowerCase() },
+      });
+    }
+
     if (!receiver) throw new NotFoundException('User not found');
+
+    if (requester.id === receiver.id) {
+      throw new BadRequestException('You cannot connect with yourself');
+    }
 
     // Check if a connection already exists in either direction
     const existing = await this.connectionRepository
       .createQueryBuilder('c')
       .where(
         '(c.requester_id = :a AND c.receiver_id = :b) OR (c.requester_id = :b AND c.receiver_id = :a)',
-        { a: requester.id, b: dto.receiverId },
+        { a: requester.id, b: receiver.id },
       )
       .getOne();
 

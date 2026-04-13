@@ -14,6 +14,7 @@ import { ApplicationsModule } from './applications/applications.module';
 import { MessagesModule } from './messages/messages.module';
 import { PkiModule } from './pki/pki.module';
 import { ConnectionsModule } from './connections/connections.module';
+import { NotificationsModule } from './notifications/notifications.module';
 import { User } from './users/user.entity';
 import { Profile } from './users/profile.entity';
 import { ProfileView } from './users/profile-view.entity';
@@ -34,8 +35,8 @@ import { Connection } from './connections/connection.entity';
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     ThrottlerModule.forRoot([
-      { name: 'global', ttl: 60000, limit: 100 },
-      { name: 'auth', ttl: 60000, limit: 10 },
+      { name: 'global', ttl: 60000, limit: 1200 },
+      { name: 'auth', ttl: 60000, limit: 60 },
     ]),
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
@@ -79,6 +80,7 @@ import { Connection } from './connections/connection.entity';
     ApplicationsModule,
     MessagesModule,
     ConnectionsModule,
+    NotificationsModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })

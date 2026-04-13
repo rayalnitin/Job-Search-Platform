@@ -8,6 +8,7 @@ import { Repository } from 'typeorm';
 import { User } from '../users/user.entity';
 import { Profile } from '../users/profile.entity';
 import { AuditService } from '../audit/audit.service'; // ✅ added
+import { AuditAction } from '../audit/audit-log.entity';
 
 @Injectable()
 export class AdminService {
@@ -74,6 +75,14 @@ export class AdminService {
     user.isSuspended = true;
     await this.userRepository.save(user);
 
+    await this.auditService.log(
+      AuditAction.USER_SUSPENDED,
+      'system',
+      user.id,
+      'User',
+      { email: user.email },
+    );
+
     return { message: 'User suspended successfully' };
   }
 
@@ -86,12 +95,28 @@ export class AdminService {
     user.isSuspended = false;
     await this.userRepository.save(user);
 
+    await this.auditService.log(
+      AuditAction.USER_UNSUSPENDED,
+      'system',
+      user.id,
+      'User',
+      { email: user.email },
+    );
+
     return { message: 'User unsuspended successfully' };
   }
 
   async deleteUser(id: string) {
     const user = await this.userRepository.findOne({ where: { id } });
     if (!user) throw new NotFoundException('User not found');
+
+    await this.auditService.log(
+      AuditAction.USER_DELETED,
+      'system',
+      user.id,
+      'User',
+      { email: user.email },
+    );
 
     await this.userRepository.remove(user);
 
@@ -100,5 +125,9 @@ export class AdminService {
 
   async getAuditLogs() {
     return this.auditService.getAllLogs();
+  }
+
+  async verifyAuditLogs() {
+    return this.auditService.verifyChain();
   }
 }
